@@ -1028,11 +1028,11 @@ class LLMBackend:
                     continue
             i += 1
 
-        if len(groups) <= 1:
+        if len(groups) <= 3:
             return messages
 
         indices_to_remove = set()
-        for group in groups[:-1]:
+        for group in groups[:-3]:
             for idx in group:
                 indices_to_remove.add(idx)
 
