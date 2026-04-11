@@ -1,0 +1,57 @@
+{
+    "<E:smile>": {
+        "ref_wav": "smile.wav",
+        "ref_text": "今日もご主人様のそばにいられて、本当に良かったです。",
+        "ref_lang": "ja"
+    },
+    "<E:angry>": {
+        "ref_wav": "angry.wav",
+        "ref_text": "私は間違ってないって！悪くないんだって！どうして認めてくれないの？！",
+        "ref_lang": "ja"
+    },
+    "<E:sad>": {
+        "ref_wav": "sad.wav",
+        "ref_text": "どうして……あの人がいるだけで、ご主人様の目は私から逸れてしまうんですか？",
+        "ref_lang": "ja"
+    },
+    "<E:serious>": {
+        "ref_wav": "serious.wav",
+        "ref_text": "収入が足りなくて、演奏活動がままならないプロとか、海外留学したくても、できない学生とか",
+        "ref_lang": "ja"
+    },
+    "<E:thinking>": {
+        "ref_wav": "thinking.wav",
+        "ref_text": "何でも欲しがる、わがままなおんなだと思う？それとも、うすっぺらなぎぜんしゃだって思う？",
+        "ref_lang": "ja"
+    },
+    "<E:surprised>": {
+        "ref_wav": "surprised.wav",
+        "ref_text": "本当に、本当に、はるき君！",
+        "ref_lang": "ja"
+    },
+    "<E:dislike>": {
+        "ref_wav": "dislike.wav",
+        "ref_text": "別に。誰でも気にしないから。私の方は言いふらしたりなんか。",
+        "ref_lang": "ja"
+    },
+    "<E:smirk>": {
+        "ref_wav": "smirk.wav",
+        "ref_text": "ふふっ、ご主人様の今の表情、なかなかいいですね。ちょっと意地悪したくなっちゃいました。",
+        "ref_lang": "ja"
+    },
+    "<E:embarrassed>": {
+        "ref_wav": "embarrassed.wav",
+        "ref_text": "ち、違うよ。昔はよく使ってたの。本当よ。でも……",
+        "ref_lang": "ja"
+    },
+    "<E:worry>": {
+        "ref_wav": "worry.wav",
+        "ref_text": "本当に……これでいいのかな。私（わたし）で……大丈夫（だいじょうぶ）なのかな……",
+        "ref_lang": "ja"
+    },
+    "<E:shy>": {
+        "ref_wav": "shy.wav",
+        "ref_text": "してないよ！……なんでかわからないけど、来ちゃってたんだよ！",
+        "ref_lang": "ja"
+    }
+}

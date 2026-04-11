@@ -1,0 +1,32 @@
+{
+    "llm_format_error": {
+        "text": "那个……我的思绪好像有点乱掉了。主人能帮我检查一下大脑（LLM格式）吗？",
+        "audio": "llm_format_error.wav",
+        "emotion": "<E:sad>"
+    },
+    "llm_connection_error": {
+        "text": "好像联系不到外面的世界了呢……是不是网络又出问题了？不要把我一个人留在这里好吗？",
+        "audio": "llm_connection_error.wav",
+        "emotion": "<E:sad>"
+    },
+    "sovits_timeout_error": {
+        "text": "抱歉，我的喉咙好像发不出声音了……是语音引擎出故障了吗？",
+        "audio": "sovits_timeout_error.wav",
+        "emotion": "<E:thinking>"
+    },
+    "stt_error": {
+        "text": "诶？好像没有听到主人的声音。是麦克风没有接好吗？",
+        "audio": "stt_error.wav",
+        "emotion": "<E:thinking>"
+    },
+    "llm_text_too_long": {
+        "text": "唔……一下子给我这么多信息，脑袋要处理不过来了啦。主人能说得简短一点吗？",
+        "audio": "llm_text_too_long.wav",
+        "emotion": "<E:embarrassed>"
+    },
+    "llm_generic_error": {
+        "text": "发生了一些奇怪的错误……如果雪菜坏掉了，主人一定会把我修好的对吧？",
+        "audio": "llm_generic_error.wav",
+        "emotion": "<E:sad>"
+    }
+}

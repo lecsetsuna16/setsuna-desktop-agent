@@ -1,0 +1,55 @@
+{
+    "pack_info": {
+        "id": "example_pack_v1",
+        "name": "示例角色包",
+        "description": "这是一个用于演示如何制作角色包的示例。包含完整的情绪支持、触发器示例和错误配置。",
+        "version": "1.0.0",
+        "author": "你的名字"
+    },
+    "character": {
+        "name": "示例角色",
+        "username_default": "user",
+        "tts_language": "zh",
+        "outfits": [
+            {
+                "id": "example_outfit",
+                "path": "assets/sprites/example_outfit",
+                "is_default": true
+            },
+            {
+                "id": "example_outfit_alt",
+                "path": "assets/sprites/example_outfit_alt"
+            }
+        ],
+        "sovits_model": {
+            "vits_weights": "models/sovits/character_v1.pth",
+            "gpt_weights": "models/sovits/character_v1.ckpt",
+            "version": "v2Pro"
+        }
+    },
+    "logic": {
+        "plugins": "plugins",
+        "prompts": [
+            {
+                "id": "default",
+                "path": "prompts/character_prompt.txt"
+            },
+            {
+                "id": "dark",
+                "path": "prompts/dark_prompt.txt"
+            }
+        ],
+        "interaction_configs": {
+            "thinking": "logic/thinking.json",
+            "listening": "logic/listening.json",
+            "emotions": "logic/emotions.json",
+            "triggers": "logic/triggers.json",
+            "error_config": "logic/error_config.json"
+        }
+    },
+    "audio": {
+        "event_audio_dir": "assets/audio",
+        "emotion_audio_dir": "assets/audio",
+        "error_audio_dir": "assets/audio"
+    }
+}

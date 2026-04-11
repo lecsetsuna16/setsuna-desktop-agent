@@ -1,0 +1,52 @@
+{
+    "pack_info": {
+        "id": "setsuna_v1",
+        "name": "小木曾雪菜",
+        "description": "来自《白色相簿2》的桌面陪伴包。包含了雪菜的复杂性格设定与专属语音引擎。 ",
+        "version": "1.0.0",
+        "author": "User"
+    },
+    "character": {
+    "name": "小木曾雪菜",
+    "username_default": "主人",
+    "tts_language": "ja",
+    "outfits": [
+        {
+            "id": "setsuna_outfit_00",
+            "path": "assets/sprites/setsuna_outfit_00",
+            "is_default": true
+        },
+        {
+            "id": "setsuna_outfit_01",
+            "path": "assets/sprites/setsuna_outfit_01",
+            "is_default": false
+        }
+    ],
+        "sovits_model": {
+            "vits_weights": "models/sovits/setsuna_e8_s712.pth",
+            "gpt_weights": "models/sovits/setsuna-e15.ckpt",
+            "version": "v2ProPlus"
+        }
+    },
+    "logic": {
+        "plugins": "plugins",
+        "prompts": [
+            {
+                "id": "default",
+                "path": "prompts/new_prompt.txt"
+            }
+        ],
+        "interaction_configs": {
+            "thinking": "logic/thinking.json",
+            "listening": "logic/listening.json",
+            "emotions": "logic/emotions.json",
+            "triggers": "logic/triggers.json",
+            "error_config": "logic/error_config.json"
+        }
+    },
+    "audio": {
+        "event_audio_dir": "assets/audio/event_audio",
+        "emotion_audio_dir": "assets/audio/extracted_ogg",
+        "error_audio_dir": "assets/audio/error_audio"
+    }
+}

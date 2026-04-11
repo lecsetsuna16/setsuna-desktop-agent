@@ -1,0 +1,5 @@
+{
+  "command": "venv\\Scripts\\python",
+  "args": ["-m", "mcp_server_time"],
+  "env": {}
+}

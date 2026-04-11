@@ -1,0 +1,118 @@
+【Resona Desktop Pet 雪菜 使用教程】
+
+需要准备的东西
+- Windows 10/11 电脑
+- 解压软件（系统自带或 Bandizip 均可）
+- 一个 AI 服务的 API Key（推荐 DeepSeek，便宜好用，官网注册就有）
+- VS Code 或 Notepad++（用来编辑配置文件，系统记事本会坏文件）
+
+────────────────────────────────────────
+
+第一步：解压
+
+把压缩包解压到一个纯英文路径，比如 C:\Resona\
+
+特别注意：路径里不能有中文、空格、括号，否则程序直接崩溃。
+  OK：C:\Resona\、D:\Games\Resona\
+  NO：C:\用户\下载\、D:\我的 项目\
+
+────────────────────────────────────────
+
+第二步：运行安装脚本
+
+找到文件夹里的 setup.ps1，右键 -> 使用 PowerShell 运行。
+
+如果弹出"无法运行脚本"，以管理员打开 PowerShell，输入以下内容然后回车：
+  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+然后再右键运行脚本。
+
+脚本会问你几个问题：
+
+1. 是否用镜像加速 -> 国内网络填 Y，国外填 N
+2. 是否用代理 -> 按实际情况
+3. 安装模式 -> 填 2（最稳定，不影响电脑其他东西）
+   如果你没有 Python 或者版本不对，填 3，脚本会自动帮你下好
+4. 下载 SoVITS 推理引擎（~7.7GB）-> 要听雪菜说话就填 Y，只要文字聊天填 N
+5. 下载 Resona_Default 资源包 -> Y
+6. 下载 STT 语音识别（~3GB）-> 要对着麦克风说话就 Y，不需要就 N
+7. 下载 FFmpeg -> Y
+8. DeepSeek API Key -> 有就粘贴，没有就回车跳过
+
+等跑完出现 Setup Complete! 就行了。
+
+────────────────────────────────────────
+
+第三步：填 API Key
+
+用 VS Code 或 Notepad++ 打开根目录下的 config.cfg
+（第一次运行 setup.ps1 后会自动生成）。
+
+找到这一行：
+  model_select = 2
+2 代表 DeepSeek，其他选项看文件里的注释。
+
+然后找到对应区块，把 Key 填进去：
+  [Model_2_DeepSeek]
+  api_key = sk-你的key粘贴在这里
+
+保存，关掉。
+
+────────────────────────────────────────
+
+第四步：建立记忆文件
+
+打开 packs\setsuna\memory\ 这个文件夹，里面有两个模板文件：
+
+USER.txt（告诉雪菜你是谁）
+  把 USER.sample.txt 复制一份，改名为 USER.txt
+  填上你的名字、所在城市、兴趣爱好之类的，不用填满
+
+MEMORY.txt（雪菜的长期记忆）
+  把 MEMORY.sample.txt 复制一份，改名为 MEMORY.txt
+  把里面除了顶部三行注释以外的内容全删掉，留空就行，雪菜会自己往里写
+
+────────────────────────────────────────
+
+第五步：放语音模型（可选，要听声音才需要）
+
+另外下载 setsuna_voice_models.zip，解压得到两个文件：
+  setsuna-e15.ckpt
+  setsuna_e8_s712.pth
+
+在你的安装目录里手动创建这个路径：
+  packs\setsuna\models\sovits\
+
+把两个文件都放进去，缺一不可。
+
+如果不想要语音，打开 config.cfg，
+把 [SoVITS] 下面的 enabled = true 改成 enabled = false。
+
+────────────────────────────────────────
+
+第六步：启动
+
+双击 run.bat。
+
+开了语音的话，首次启动需要等 1～3 分钟，界面空白是正常的，别关，等就行。
+
+看到命令行出现 [Main] MCP SERVERS METADATA loaded 就成功了，点击立绘开始聊天。
+
+────────────────────────────────────────
+
+常见问题
+
+Q：启动报错缺少 Visual C++ 运行库
+A：下载安装这个：https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+Q：config.cfg 打开是乱码
+A：用 VS Code 或 Notepad++ 打开，不要用系统记事本
+
+Q：启动了但雪菜不说话（只有文字）
+A：检查 packs\setsuna\models\sovits\ 下面有没有 .ckpt 和 .pth 两个文件
+
+Q：记忆没有生效
+A：检查 packs\setsuna\memory\ 下面是不是有 USER.txt 和 MEMORY.txt
+   不是只有 .sample 文件
+
+Q：想省 Token，不要工具调用功能
+A：config.cfg 里 [MCP] enabled = false

@@ -1,0 +1,29 @@
+[
+    {
+        "id": "example_process_trigger",
+        "enabled": true,
+        "description": "检测到记事本打开时触发",
+        "logic": "AND",
+        "probability": 1.0,
+        "cooldown": 60,
+        "max_triggers": 999,
+        "one_shot_per_pid": true,
+        "conditions": [
+            {
+                "type": "process_active",
+                "pnames": [
+                    "notepad.exe"
+                ],
+                "only_new": true
+            }
+        ],
+        "actions": [
+            {
+                "type": "speak",
+                "text": "你要开始写日记了吗？还是在记录什么重要的东西？",
+                "emotion": "<E:smile>",
+                "voice_file": "events/notepad_open.wav"
+            }
+        ]
+    }
+]

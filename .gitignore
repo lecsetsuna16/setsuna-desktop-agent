@@ -1,0 +1,242 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# =========================
+# Virtual Environment
+# =========================
+venv/
+ENV/
+env/
+.venv/
+.conda/
+conda-env/
+
+# =========================
+# IDE / Editor
+# =========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# =========================
+# OS Generated Files
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =========================
+# Models (Large Files)
+# =========================
+models/sovits/*.ckpt
+models/sovits/*.pth
+models/sovits/*.safetensors
+models/stt/**/*.onnx
+models/stt/**/*.bin
+models/stt/**/tokens.txt
+models/llm/
+
+# Keep model directories but not the large files
+!models/sovits/.gitkeep
+!models/stt/.gitkeep
+!models/llm/.gitkeep
+
+# =========================
+# GPT-SoVITS Runtime
+# =========================
+GPT_SoVITS/
+GPT-SoVITS/
+TEMP/
+output/
+logs/
+reference/
+*.wav
+*.mp3
+*.ogg
+!gsv/*.wav
+!gsv/**/*.wav
+
+# =========================
+# TTS Output
+# =========================
+resona_tts_*/
+
+# =========================
+# Config with secrets
+# =========================
+config.cfg
+
+# =========================
+# Personal data in packs
+# =========================
+packs/*/memory/MEMORY.txt
+packs/*/memory/USER.txt
+packs/*/memory/*.txt
+!packs/*/memory/*.sample.txt
+packs/*/models/
+packs/*/state.json
+packs/*/prompts/character_prompt.txt
+packs/*/prompts/new_prompt.txt
+packs/*/auto_keywords.json
+
+# =========================
+# Large downloaded assets
+# =========================
+ffmpeg/
+runtime/
+*.zip
+*.tar.bz2
+
+# =========================
+# Personal / local only
+# =========================
+备份/
+.claude/
+HANDOFF_REPORT.txt
+mcpserver/auto_keywords.json
+请先读我.txt
+
+# =========================
+# Minecraft Mod Development (Recursive)
+# =========================
+# Build & Runtime
+**/build/
+**/.gradle/
+**/bin/
+**/out/
+**/run/
+**/run_server/
+**/run_client/
+**/dump/
+**/logs/
+**/debug/
+**/reobf/
+**/eclipse/
+**/*.log
+**/*.litemod
+**/*.jar
+**/*.class
+
+# IDE Configs
+**/.idea/
+**/.vscode/
+**/.settings/
+**/.project
+**/.classpath
+**/.factorypath
+**/.nb-gradle/
+**/*.iml
+**/*.ipr
+**/*.iws
+**/*.launch
+
+# Gradle Wrapper (Keep necessary files)
+!**/gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.properties
+!**/gradlew
+!**/gradlew.bat
+**/gradle.properties
+
+# Minecraft Runtime Data
+**/mods/
+**/config/
+**/resourcepacks/
+**/saves/
+**/screenshots/
+**/shaderpacks/
+**/crash-reports/
+
+# =========================
+# Logs and temp files
+# =========================
+*.log
+*.tmp
+*.temp
+*.bak
+
+# =========================
+# Test and coverage
+# =========================
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+
+# =========================
+# Jupyter Notebooks
+# =========================
+.ipynb_checkpoints/
+*.ipynb
+
+# =========================
+# Distribution / Packaging
+# =========================
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# =========================
+# PyInstaller
+# =========================
+*.manifest
+*.spec
+dist/
+build/
+
+# =========================
+# Local development
+# =========================
+.env
+.env.local
+*.local.cfg
+
+# =========================
+# Android Client
+# =========================
+android-client/.gradle/
+android-client/.idea/
+android-client/.cxx/
+android-client/.kotlin/
+android-client/local.properties
+android-client/**/build/
+android-client/**/*.apk
+android-client/**/*.aab
+android-client/**/*.iml
+android-client/*.keystore

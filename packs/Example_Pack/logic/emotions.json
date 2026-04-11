@@ -1,0 +1,47 @@
+{
+    "<E:smile>": {
+        "ref_wav": "emotions/smile.wav",
+        "ref_text": "今天天气真好，我们要一起去散步吗？",
+        "ref_lang": "zh"
+    },
+    "<E:serious>": {
+        "ref_wav": "emotions/serious.wav",
+        "ref_text": "我在认真听你说话，请继续。",
+        "ref_lang": "zh"
+    },
+    "<E:angry>": {
+        "ref_wav": "emotions/angry.wav",
+        "ref_text": "真是的，太过分了！",
+        "ref_lang": "zh"
+    },
+    "<E:sad>": {
+        "ref_wav": "emotions/sad.wav",
+        "ref_text": "心里稍微有点难过呢...",
+        "ref_lang": "zh"
+    },
+    "<E:thinking>": {
+        "ref_wav": "emotions/thinking.wav",
+        "ref_text": "让我想想该怎么回答你。",
+        "ref_lang": "zh"
+    },
+    "<E:surprised>": {
+        "ref_wav": "emotions/surprised.wav",
+        "ref_text": "哎？竟然是这样吗？",
+        "ref_lang": "zh"
+    },
+    "<E:dislike>": {
+        "ref_wav": "emotions/dislike.wav",
+        "ref_text": "这种感觉，稍微有点讨厌。",
+        "ref_lang": "zh"
+    },
+    "<E:smirk>": {
+        "ref_wav": "emotions/smirk.wav",
+        "ref_text": "呵呵，被我抓到把柄了吧？",
+        "ref_lang": "zh"
+    },
+    "<E:embarrassed>": {
+        "ref_wav": "emotions/embarrassed.wav",
+        "ref_text": "别、别一直盯着我看啊，笨蛋。",
+        "ref_lang": "zh"
+    }
+}

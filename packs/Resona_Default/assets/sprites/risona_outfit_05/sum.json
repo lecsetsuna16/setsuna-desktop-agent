@@ -1,0 +1,28 @@
+{
+    "<E:smile>": [
+        "res_m_5_0_00"
+    ],
+    "<E:serious>": [
+        "res_m_5_0_03",
+        "res_m_5_0_05"
+    ],
+    "<E:sad>": [
+        "res_m_5_0_06",
+        "res_m_5_1_06"
+    ],
+    "<E:thinking>": [
+        "res_m_5_0_01"
+    ],
+    "<E:surprised>": [
+        "res_m_5_0_07"
+    ],
+    "<E:smirk>": [
+        "res_m_5_0_04"
+    ],
+    "<E:embarrassed>": [
+        "res_m_5_1_17"
+    ],
+    "<E:angry>": [
+        "res_m_5_0_00"
+    ]
+}

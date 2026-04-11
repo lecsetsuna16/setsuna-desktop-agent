@@ -1,0 +1,32 @@
+{
+    "llm_format_error": {
+        "text": "你的LLM返回的格式似乎出了问题，这个程序解析不了。如果你确定格式没问题的话，就带着日志去提出issue吧？",
+        "audio": "gsv/error_audio/format_error.wav",
+        "emotion": "<E:confused>"
+    },
+    "llm_connection_error": {
+        "text": "似乎没有办法连接LLM呢。是你的网络环境出了问题，还是你没有正确配置代理服务器？",
+        "audio": "gsv/error_audio/connection_error.wav",
+        "emotion": "<E:sad>"
+    },
+    "sovits_timeout_error": {
+        "text": "我的声音引擎，也就是TTS服务似乎没有响应。是TTS服务出现了问题，还是你的电脑配置不够？",
+        "audio": "gsv/error_audio/sovits_timeout.wav",
+        "emotion": "<E:thinking>"
+    },
+    "stt_error": {
+        "text": "STT服务出现了问题，连杂音都没有录到呢。检查一下STT文件的完好吧？如果不行，就配置一下关闭它。",
+        "audio": "gsv/error_audio/stt_error.wav",
+        "emotion": "<E:thinking>"
+    },
+    "llm_text_too_long": {
+        "text": "LLM返回的文本太长了呢。为了照顾你的使用体验，所以我就不解析了。一定要记得不要乱调Prompt哦？",
+        "audio": "gsv/error_audio/too_long.wav",
+        "emotion": "<E:angry>"
+    },
+    "llm_generic_error": {
+        "text": "LLM发生了意料之外的错误。你能看到这个的话，先试试自己修好吧，毕竟这个程序的作者可是试了很多次都没触发过一次这个呢，也不一定知道怎么修复。",
+        "audio": "gsv/error_audio/generic_error.wav",
+        "emotion": "<E:sad>"
+    }
+}

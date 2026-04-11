@@ -1,0 +1,170 @@
+[English](README_EN.md) | [中文](README.md)
+
+> **🚀 想要制作自己的桌宠角色？**  
+> 查看最新发布的 **[🎨 小白资源包创作/修改保姆级指南](docs/CUSTOM_PACK_GUIDE_FOR_BEGINNERS.md)**，从零开始打造你的专属伴侣！
+
+# ResonaDesktopPet
+
+> 本项目采用 **CC BY-NC-SA 4.0** 许可证（署名-非商业性使用-相同方式共享）。这是一个**源码公开（Source-Available）**项目，而非 OSI 认证的开源项目——NC 条款禁止未经授权的商业使用，详见 [LEGAL.md](docs/LEGAL.md)。
+
+这是一个通用的桌面宠物项目，通过集成大语言模型 (LLM)、语音合成 (SoVITS) 与语音识别 (STT) 技术，实现了生动、自然的交互体验。
+通过自定义的资源包和丰富多样的事件，实现远超一般桌面宠物的体验。
+请自行获取适配本程序的资源包。
+
+
+## 💬 作者的话
+
+本项目大部分功能都可能不稳定，请随时报告有可能的bug。
+如果你看到了这里，没有任何头绪，什么都不知道，不想思考，只想一键安装然后run起来，那么直接使用 `setup.ps1` ，右键它，选择”使用 Powershell 运行”，等待约二十分钟左右（这取决于你的网速和硬盘IO速度）即可完成环境的配置。
+
+
+## 💡 使用提示
+
+- **环境要求**：本项目依赖 **Microsoft Visual C++ Redistributable (2015-2022)**。如果启动时报错或 `run.bat` 提示缺少环境，请[从微软官网下载并安装](https://aka.ms/vs/17/release/vc_redist.x64.exe)。
+- **Python 版本**：仅支持 **Python 3.10 ~ 3.13**。Python 3.14+ 因依赖库尚未适配，**无法正常安装**。如不确定，选择 `setup.ps1` 中的模式 3 使用内置运行时。
+- **⚠️ 编辑 config.cfg 时请使用 VS Code 或 Notepad++ 等支持 UTF-8 的编辑器。** 用 Windows 自带记事本打开后保存会将编码改为 ANSI，导致中文乱码及启动崩溃。
+- **语音加载时间**：启用 SoVITS 时，首次启动需等待约 **1～3 分钟**加载语音模型，界面空白属正常现象，请耐心等待。
+- **立绘比例**：UI 不严格限制分辨率，但请确保立绘文件比例为 **16:9**。
+- **性能建议**：推理设备性能决定 TTS 速度，网络质量决定 LLM 响应速度。
+- **语音调优**：若对默认语音质量不满意，可自行更换 `emotion.json` 中的参考音频与标注文本。
+- **语言匹配**：建议保持模型训练语言、参考音频语言与 LLM 输出语言（`text_tts`）一致。目前仅在 **中文 (zh)** 与 **日语 (ja)** 环境下完成测试。
+- **OCR 风险提示**：若启用 OCR，将对当前屏幕内容截图并发送至第三方 OCR 服务商进行识别，可能包含敏感信息与窗口标题/进程名称等隐私数据。启用即视为知情并自行承担由此带来的全部后果。
+
+## 🙏 鸣谢与说明
+
+- **灵感来源**：本项目部分代码参考自 [luna-sama](https://github.com/annali07/luna-sama)。
+- **核心技术**：专为与 [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 交互设计，只测试了 `v2pro-20250604` 版本与v2Pro模型版本，不保证其他版本的兼容性。如果您需要训练模型权重以配合本项目使用，尽可能使用对应版本。
+- **关于环境**：本项目提供的安装脚本集成了精简的 SoVITS 运行时环境（基于 MIT 协议），旨在降低部署门槛。
+- **语音识别组件**：项目中的 `setup.ps1` 安装脚本下载并使用的语音识别模型 SenseVoiceSmall 是由 Alibaba Group (FunASR) 开发并开源的，遵循 FunASR Model License 1.1。 该脚本使用了由 k2-fsa / sherpa-onnx 项目提供的 ONNX 转换版本。
+- **工具调用框架**：本项目使用 [MCP (Model Context Protocol)](https://github.com/modelcontextprotocol) by Anthropic 实现 Agent 工具调用能力，使用 [litellm](https://github.com/BerriAI/litellm)（MIT）统一接入多家 LLM 服务商。
+- **功能侧重**：专注于高效、轻量的对话体验，暂不计划加入 Live2D 演出、实时屏幕识别或复杂的好感度系统。
+
+## 🤖 MCP (Model Context Protocol) 支持与警告
+
+本项目支持 Model Context Protocol (MCP)，允许 LLM 调用本地工具（如文件操作、屏幕截图 OCR、命令行执行等）。
+
+### ⚠️ 高风险警告与免责声明
+
+1.  **Token 消耗激增**：
+    *   开启 MCP 后，LLM 的 System Prompt 会自动注入大量工具描述（Tool Definitions）。
+    *   每次对话都会携带这些工具描述，**这将导致 Input Token 消耗大幅增加**。
+    *   如果您的 LLM 计费昂贵，请务必慎重开启。
+
+2.  **安全风险**：
+    *   本项目预设的 MCP 工具（如 `filesystem_tools`、`command_proxy`）具有**极高的系统权限**（读写文件、执行任意 Shell 命令）。
+    *   **严禁**在公共环境或不可信的 LLM 模型上使用这些工具。
+    *   **严禁**修改 Prompt 诱导 LLM 进行恶意操作。
+
+3.  **免责声明**：
+    *   由于用户自行开启 MCP、使用不受信任的 MCP 服务器、或修改 Prompt 导致的文件丢失、系统损坏、隐私泄露等任何问题，**本项目作者不承担任何责任**。
+    *   MCP 功能默认开启，开启 MCP 功能即代表您已充分了解并自愿承担上述所有风险。
+
+## 📚 详细文档
+
+为了帮助您更深入地了解和使用本项目，我们准备了详细的分类文档：
+
+- **[⭐ 完整使用指南](docs/GUIDE_QUICKSTART.md)**：**从解压到第一次对话，全流程一份搞定。新用户从这里开始。**
+- **[核心特性](docs/FEATURES.md)**：深入了解本项目能做什么。
+- **[技术架构](docs/ARCHITECTURE.md)**：了解项目的内部工作原理。
+- **[后端服务模块](docs/BACKEND.md)**：LLM、TTS 和 STT 的详细实现说明。
+- **[用户界面组件](docs/UI_COMPONENTS.md)**：UI 构成与交互逻辑。
+- **[资源包系统](docs/RESOURCE_PACKS.md)**：如何制作和自定义您自己的角色。
+- **[开发工具指南](docs/TOOLS_GUIDE.md)**：内置四个辅助工具的详细使用方法。
+- **[交互触发器指南](docs/TRIGGER_EDITOR_GUIDE.md)**：教您如何使用编辑器让宠物更智能。
+- **[小白资源包创作指南](docs/CUSTOM_PACK_GUIDE_FOR_BEGINNERS.md)**：**最详细**的零基础角色定制教程。
+
+## 🌟 核心特性
+
+- **深度交互体验**：连接云端或本地 LLM，赋予宠物独特的性格与对话能力。
+- **全语音支持**：通过 SoVITS 实现高质量语音输出，通过STT实现半实时语音对话。
+- **MCP 扩展支持**：支持 Model Context Protocol，允许 LLM 调用本地工具（文件操作、命令行、定时提醒等），实现 Agent 能力。
+- **Web 服务接口**：内置 FastAPI 服务器，支持 WebSocket 连接，可实现于其他设备上访问局域网内的桌宠，而将计算压力放到其他机器上。
+- **物理引擎（实验性）**：内置简单的物理引擎，支持重力、碰撞、拖拽惯性等效果。不总是能稳定工作。
+- **低配置友好**：通过云端的LLM，设置为CPU模式的SoVITS，理论上无需GPU即可体验。
+- **自动化部署**：提供完善的安装脚本，支持一键配置虚拟环境。如果你是纯小白，可以选择建立一个Runtime环境。
+
+## 🛠️ 技术架构
+
+- **UI 框架**：PySide6 (Qt for Python, LGPL 许可证)
+- **语言模型**：支持 OpenAI 格式接口及多种主流云端/本地模型。
+- **语音识别**：基于 SenseVoice 的离线快速识别。使用默认录音设备，请确保你吐字清晰无杂音。
+- **语音合成**：GPT-SoVITS 推理引擎。
+
+## 🚀 快速开始
+
+1. **下载本项目**：克隆本仓库。
+2. **运行安装脚本**：
+   - 右键点击 `setup.ps1`，选择 **"使用 PowerShell 运行"**。
+   - 根据提示选择安装模式（推荐选项 2 或 3）并下载默认资源包。
+3. **配置 API Key**：
+   - 用 **VS Code 或 Notepad++**（不要用系统记事本）打开 `config.cfg`，在对应模型区块填入您的 API Key。
+   - `model_select` 字段决定使用哪个模型，对应关系如下：
+
+     | model_select | 模型服务商 | 备注 |
+     |:---:|---|---|
+     | 1 | OpenAI | gpt-4o 等 |
+     | 2 | DeepSeek | **推荐**，含双模型路由 |
+     | 3 | Claude (Anthropic) | |
+     | 4 | Kimi (月之暗面) | |
+     | 5 | Gemini (Google) | |
+     | 6 | Grok (xAI) | |
+     | 7 | Qwen (阿里云百炼) | |
+     | 8 | GitHub Models | |
+     | 9 | 任意 OpenAI 兼容接口 | 填 base_url 即可 |
+     | 10 | 智谱 GLM | |
+     | 11 | 本地模型 (Ollama 等) | llm_mode = local |
+4. **配置 SoVITS**:
+   - 从https://github.com/RVC-Boss/GPT-SoVITS/releases/tag/20250606v2pro 获取SoVITS的整合包，解压到GPT-SoVITS目录下，确保你的路径看起来像这样："ResonaDesktopPet\GPT-SoVITS\GPT-SoVITS-v2pro-20250604\api_v2.py"。你也可以使用任何你喜欢的形式，只要它存在一个api_v2.py并且能够被程序正常调用。
+   - 程序在启动时，如果SoVITS启用，会从这里启动一个SoVITS服务器用于实时合成语音。
+5. **启动程序**：
+   - 双击 `run.bat` 即可开始与您的桌面宠物互动。
+   - 无论何时请确保项目目录中不要存在任何非英文字符。
+
+## 🛠️ 扩展开发工具 (tools/)
+
+本项目内置了一系列工具，方便开发者与资源包制作者：
+
+- **交互逻辑编辑器** (`trigger_editor.py`): 图形化界面，用于编辑资源包内的 `triggers.json`。支持配置复杂的触发条件（如系统温度、进程状态、时间段等）及连续的响应动作。
+- **全量传感器模拟器** (`sensor_mocker.py`): 用于模拟系统各项参数（CPU/GPU 温度、占用、剪贴板内容等）。开启后可实时测试自定义触发器的生效情况，无需真实压测。在config.cfg中设置debugtrigger = true即可启用。
+- **立绘预处理器** (`image_processor.py`): 自动将 PNG 图片居中下对齐，然后用透明像素填充到1280*720，旨在快速处理大量不符合要求的立绘文件。
+- **动画序列整理器** (`sprite_organizer.py`): 批量重命名与管理立绘素材，并为它们创建sum.json。
+- 如果要制作您自己的资源包，请参考默认资源包中的格式。
+
+## 🔌 插件系统
+
+本程序具有插件系统，你可以从资源包中加载外部.py以自定义本程序的trigger与actions交互。注意：只加载你能信任的插件。
+
+## ⚙️ 交互触发系统详解 (Triggers)
+
+通过 `trigger_editor.py`，你可以为宠物配置极具个性化的反应逻辑。目前支持以下能力：
+
+### 1. 触发判定条件 (Conditions)
+- **系统监控**：CPU/GPU 温度、CPU/GPU 占用率、电池电量（笔记本）。
+- **软件检测**：特定进程处于焦点、特定进程在后台运行、进程存活时间、浏览器访问特定 URL（只支持Chrome与Edge）、窗口标题匹配关键词。
+- **用户交互**：鼠标悬停时长、指针离开立绘时长、长按立绘时长、点击立绘连击数（区分一段时间内点击与生命周期内累计点击）、**文件拖入检测**。
+- **环境感知**：进入全屏模式检测、天气状态匹配、正在播放的音乐匹配（只支持网易云音乐）。
+- **时间与日期**：特定日期、特定时间段。
+- **其他**：闲置时长检测、闲置恢复触发、剪贴板内容关键词匹配。
+- **逻辑组合**：支持 `AND`（全部满足）、`OR`（任一满足）、`CUMULATIVE`（累计达成）等复杂逻辑嵌套。
+
+### 2. 响应动作序列 (Actions)
+- **语音台词** (`speak`): 播放特定语音，需指定文本与感情标签。
+- **延迟等待** (`delay`): 在连续动作之间插入等待时间。
+- **移动位置** (`move_to`): 让宠物在屏幕上移动。
+- **虚化/透明度** (`fade_out`): 改变宠物的显示亮度或透明度。
+- **随机动作分支** (`random_group`): 从多个预设动作中随机抽取一个执行。未经过充分测试。
+- **锁定交互** (`lock_intermation`)： 一定时间内完全禁止任何交互。未经过充分测试。
+- **退出程序** (`exit_app`): 关闭程序。
+
+## ⚠️ 版权与许可
+
+- **代码授权**：本项目源代码采用 [CC BY-NC-SA 4.0](LICENSE) 许可证（署名-非商业性使用-相同方式共享）。
+- **禁止商用**：严禁将本项目代码、模型或相关素材用于任何商业盈利目的。
+- **法律条款**：有关免责声明、资源归属及使用风险的详细说明，请参阅 [LEGAL.md](docs/LEGAL.md)。
+
+一旦您开始下载、安装、调试或运行本项目/本仓库的任何内容，即视为您已完整阅读并同意 [LEGAL.md](docs/LEGAL.md) 中的所有条款。如果您不同意相关内容，请立即停止使用并删除资源。
+
+---
+本文档由 [Claude Code](https://claude.ai/code) 全程协助维护。文档内容部分使用大语言模型辅助生成，翻译亦由大语言模型完成，如出现任何偏差不代表作者的真实意愿。
+
+This document is maintained with the assistance of [Claude Code](https://claude.ai/code). Parts of the content were generated with the help of large language models; translations were also completed by large language models. Any deviations do not represent the author's true intent.

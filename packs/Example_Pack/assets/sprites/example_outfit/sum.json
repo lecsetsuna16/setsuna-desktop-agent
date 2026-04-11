@@ -1,0 +1,11 @@
+{
+    "<E:smile>": ["example_smile"],
+    "<E:serious>": ["example_serious"],
+    "<E:angry>": ["example_angry"],
+    "<E:sad>": ["example_sad"],
+    "<E:thinking>": ["example_thinking"],
+    "<E:surprised>": ["example_surprised"],
+    "<E:dislike>": ["example_dislike"],
+    "<E:smirk>": ["example_smirk"],
+    "<E:embarrassed>": ["example_embarrassed"]
+}

@@ -1,0 +1,17 @@
+{
+    "llm_format_error": {
+        "text": "哎呀，解析不出你的LLM在说什么呢，格式好像不对哦。",
+        "audio": "errors/format_error.wav",
+        "emotion": "<E:serious>"
+    },
+    "llm_connection_error": {
+        "text": "网络好像断掉了，我没法和大脑连接了...",
+        "audio": "errors/connection_error.wav",
+        "emotion": "<E:sad>"
+    },
+    "sovits_timeout_error": {
+        "text": "喉咙有点不舒服（语音引擎超时），稍微等我一下好吗？",
+        "audio": "errors/timeout_error.wav",
+        "emotion": "<E:thinking>"
+    }
+}

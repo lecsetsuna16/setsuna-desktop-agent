@@ -1,0 +1,47 @@
+{
+    "<E:smile>": {
+        "ref_wav": "extracted_ogg/smile.wav",
+        "ref_text": "何の予備知識もないお嬢様たちがパターンの引き方をいきなりおっぱじめられて、ついていけるわけがありません。",
+        "ref_lang": "ja"
+    },
+    "<E:angry>": {
+        "ref_wav": "extracted_ogg/angry.wav",
+        "ref_text": "母に報告して、学院から追放したりするのであれば、私はあなたの敵に回ります。",
+        "ref_lang": "ja"
+    },
+    "<E:sad>": {
+        "ref_wav": "extracted_ogg/sad.wav",
+        "ref_text": "突然、上の兄がやってきて、携帯電話を奪われました。よくも今まで黙って好き勝手な真似をしてくれたなと。",
+        "ref_lang": "ja"
+    },
+    "<E:serious>": {
+        "ref_wav": "extracted_ogg/serious.wav",
+        "ref_text": "おっ、今夜一晩、二人で過ごすんですか？それはつまり、妹を抱くという宣言ですか？",
+        "ref_lang": "ja"
+    },
+    "<E:thinking>": {
+        "ref_wav": "extracted_ogg/thinking.wav",
+        "ref_text": "いつの間にかメイド服は衣装だから汚してはいけないものだと変な印象がついていたようです。",
+        "ref_lang": "ja"
+    },
+    "<E:surprised>": {
+        "ref_wav": "extracted_ogg/surprised.wav",
+        "ref_text": "下の兄は純粋すぎるんです。本心からでなければ綺麗事を言うのはお勧めしません。",
+        "ref_lang": "ja"
+    },
+    "<E:dislike>": {
+        "ref_wav": "extracted_ogg/dislike.wav",
+        "ref_text": "何で学院から帰ってくるなりメイド服着てるんですか。しかも人の部屋で。",
+        "ref_lang": "ja"
+    },
+    "<E:smirk>": {
+        "ref_wav": "extracted_ogg/smirk.wav",
+        "ref_text": "よくもまあ今まで近親婚には反対だの、私がしたいなら抱いてもいいだの、淡白な返事を並べてくれたものです。",
+        "ref_lang": "ja"
+    },
+    "<E:embarrassed>": {
+        "ref_wav": "extracted_ogg/embarrassed.wav",
+        "ref_text": "何ですか、何ですか？下の兄が妹のことを一分でも多く考えるなら、毎日ここへ通った甲斐があるというものです。さあ！",
+        "ref_lang": "ja"
+    }
+}
