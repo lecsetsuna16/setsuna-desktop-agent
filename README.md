@@ -41,7 +41,7 @@
 
 ## 🤖 MCP (Model Context Protocol) 支持与警告
 
-本项目支持 Model Context Protocol (MCP)，允许 LLM 调用本地工具（如文件操作、屏幕截图 OCR(要单独开启）、命令行执行等）。
+本项目支持 Model Context Protocol (MCP)，允许 LLM 调用本地工具（如文件操作、命令行执行、网页抓取、定时提醒等）。
 
 ### ⚠️ 高风险警告与免责声明
 
@@ -92,7 +92,7 @@
 
 ## 🚀 快速开始
 
-1. **下载本项目**：克隆本仓库。
+1. **下载本项目**：点击右上角 **Code → Download ZIP** 下载并解压，或使用 `git clone`。
 2. **运行安装脚本**：
    - 右键点击 `setup.ps1`，选择 **"使用 PowerShell 运行"**。
    - 根据提示选择安装模式（推荐选项 2 或 3）并下载默认资源包。
