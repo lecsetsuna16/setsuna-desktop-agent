@@ -71,6 +71,7 @@ class MainWindow(QWidget):
         self.character.setup(self.project_root, self.config.default_outfit)
         self.character.set_emotion("<E:smile>", deterministic=True)
         self.sync_window_to_sprite()
+
         img_rect = self.character.image_rect()
         if img_rect.width() > 0 and img_rect.height() > 0:
             target_w = self.config.sprite_width
@@ -120,6 +121,10 @@ class MainWindow(QWidget):
         self.text_display_timer = QTimer(self)
         self.text_display_timer.setSingleShot(True)
         self.text_display_timer.timeout.connect(self.finish_processing)
+        self.idle_sprite_timer = QTimer(self)
+        self.idle_sprite_timer.setInterval(60000)
+        self.idle_sprite_timer.timeout.connect(self._on_idle_sprite_cycle)
+        self.idle_sprite_timer.start()
         self.io.submitted.connect(self.on_query_submitted)
         self.io.text_changed.connect(self.on_input_text_changed)
         self.io.file_dropped.connect(self.on_file_dropped)
@@ -215,6 +220,7 @@ class MainWindow(QWidget):
     def start_thinking(self):
         if self.is_listening: return
         self.is_processing = True
+        self.idle_sprite_timer.stop()
         self.cancel_idle_fade()
         self.set_emotion("<E:thinking>")
         status_name = f"[{self.config.character_name}] Thinking..."
@@ -247,6 +253,7 @@ class MainWindow(QWidget):
                 
     def switch_thinking_text(self):
         if self.is_listening or not self.is_processing: return
+        self.character.set_emotion("<E:thinking>")
         if self.thinking_texts:
             text = random.choice(self.thinking_texts)
             self.io.show_status(text)
@@ -269,6 +276,7 @@ class MainWindow(QWidget):
         if listening:
 
             self.is_processing = False
+            self.idle_sprite_timer.stop()
             self.thinking_timer.stop()
             self.thinking_switch_timer.stop()
             self.cancel_idle_fade()
@@ -336,8 +344,13 @@ class MainWindow(QWidget):
         self.thinking_switch_timer.stop()
         self.text_display_timer.stop()
         self.set_emotion("<E:smile>")
+        self.idle_sprite_timer.start()
         self.schedule_idle_fade()
         
+    def _on_idle_sprite_cycle(self):
+        if not self.is_processing and not self.is_listening and not self.is_speaking:
+            self.character.set_emotion("<E:smile>")
+
     def on_audio_complete(self):
         QTimer.singleShot(1500, self.finish_processing)
 

@@ -20,6 +20,7 @@ ResonaDesktopPet is more than just a desktop ornament; it is a deep interaction 
 ## 4. Flexible Resource Pack System
 - **One-Click Swapping**: Seamlessly switch between character packs, including sprites, voice models, personality prompts, and trigger logic.
 - **Highly Customizable**: Define all character behaviors through simple JSON configurations.
+- **Multi-Variant Sprites**: Each emotion state supports multiple sprite variants. During thinking, a new variant is randomly selected each time the status text cycles. During idle, the sprite rotates automatically every minute to avoid showing the same image for extended periods.
 
 ## 5. Comprehensive Developer Tools
 - **Visual Editor**: A GUI-based trigger editor eliminates the need for manual JSON editing.
