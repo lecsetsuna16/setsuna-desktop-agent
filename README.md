@@ -3,7 +3,7 @@
 > **🚀 想要制作自己的桌宠角色？**  
 > 查看最新发布的 **[🎨 小白资源包创作/修改保姆级指南](docs/CUSTOM_PACK_GUIDE_FOR_BEGINNERS.md)**，从零开始打造你的专属伴侣！
 
-# setsunadesktoppet
+# setsuna-desktop-pet
 
 > 本项目采用 **CC BY-NC-SA 4.0** 许可证（署名-非商业性使用-相同方式共享）。这是一个**源码公开（Source-Available）**项目，而非 OSI 认证的开源项目——NC 条款禁止未经授权的商业使用，详见 [LEGAL.md](docs/LEGAL.md)。
 
