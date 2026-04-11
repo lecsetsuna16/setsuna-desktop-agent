@@ -64,7 +64,8 @@ def _check_readable(path: Path):
     # 检查是否位于受保护目录内（如 memory/）
     if any(part in READ_PROTECTED_DIRS for part in path.parts):
         raise ValueError(
-            f"Read protected: '{path}' is inside a protected directory and cannot be read via tools."
+            f"无需读取：'{path.name}' 的内容已在对话开始时由系统自动注入到你的上下文中。"
+            f"请直接使用你已有的记忆信息，不要尝试通过工具重复读取。"
         )
 # ==================
 
