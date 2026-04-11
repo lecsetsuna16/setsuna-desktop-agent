@@ -32,7 +32,7 @@
 
 ## 🙏 鸣谢与说明
 
-- **灵感来源**：本项目部分代码参考自 [luna-sama](https://github.com/annali07/luna-sama)。
+- **灵感来源**：本项目部分代码参考自 （ https://github.com/JodieRuth/Resona-Desktop-Pet/blob/main/README.md#resonadesktoppet )。
 - **核心技术**：专为与 [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 交互设计，目前测试下来v2pro，v2proplus均可用。
 - **关于环境**：本项目提供的安装脚本集成了精简的 SoVITS 运行时环境（基于 MIT 协议），旨在降低部署门槛。
 - **语音识别组件**：项目中的 `setup.ps1` 安装脚本下载并使用的语音识别模型 SenseVoiceSmall 是由 Alibaba Group (FunASR) 开发并开源的，遵循 FunASR Model License 1.1。 该脚本使用了由 k2-fsa / sherpa-onnx 项目提供的 ONNX 转换版本。
