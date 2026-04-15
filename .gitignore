@@ -99,6 +99,11 @@ resona_tts_*/
 config.cfg
 
 # =========================
+# Character packs (distributed separately)
+# =========================
+packs/Resona_Default/
+
+# =========================
 # Personal data in packs
 # =========================
 packs/*/memory/MEMORY.txt
