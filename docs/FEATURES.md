@@ -1,6 +1,6 @@
 # 🌟 核心特性 (Core Features)
 
-ResonaDesktopPet 不仅仅是一个简单的桌面挂件，它是一个集成了多种 AI 技术的深度交互系统。
+SetsunaDesktopPet 不仅仅是一个简单的桌面挂件，它是一个集成了多种 AI 技术的深度交互系统。
 
 ## 1. 深度对话交互
 - **多模型支持**：支持 OpenAI (DeepSeek/GPT-4), Google Gemini, Anthropic Claude 等多种大模型。

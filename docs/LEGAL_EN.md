@@ -4,7 +4,7 @@ By downloading, installing, debugging, or running any content in this project/re
 
 ## Author's Special Rights
 
-The core logic, triggering system, scheduling architecture, and original toolchains of this project (ResonaDesktopPet) are original works of the author.
+The core logic, triggering system, scheduling architecture, and original toolchains of this project (SetsunaDesktopPet) are original works of the author.
 
 As the copyright holder, the author reserves all original rights for commercial development, demonstration for profit, and receiving voluntary donations for this software framework.
 

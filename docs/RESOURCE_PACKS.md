@@ -1,6 +1,6 @@
 # 📦 资源包系统 (Resource Pack System)
 
-资源包是 ResonaDesktopPet 的核心，它决定了宠物的形象、声音、性格与行为逻辑。
+资源包是 SetsunaDesktopPet 的核心，它决定了宠物的形象、声音、性格与行为逻辑。
 
 ## 1. 目录结构
 一个标准的资源包目录（如 `packs/Example_Pack/`）结构如下：

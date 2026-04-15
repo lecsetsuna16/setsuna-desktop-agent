@@ -22,7 +22,7 @@ class SettingsDialog(QDialog):
         self.project_root = Path(config.config_path).parent
         self.current_model_num = -1
 
-        self.setWindowTitle("Resona Desktop Pet - Settings")
+        self.setWindowTitle("Setsuna Desktop Pet - Settings")
         self.setMinimumSize(980, 900)
         self.resize(980, 900)
         self.setStyleSheet("""

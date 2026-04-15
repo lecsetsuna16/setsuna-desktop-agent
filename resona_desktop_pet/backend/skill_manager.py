@@ -1,5 +1,5 @@
 """
-SkillManager — Resona Desktop Pet Skill 系统
+SkillManager — Setsuna Desktop Pet Skill 系统
 
 兼容 OpenClaw AgentSkills 生态（https://github.com/openclawai/openclaw）。
 

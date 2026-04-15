@@ -1,4 +1,4 @@
-# Resona Desktop Pet - Demo Setup Script (No Voice Synthesis)
+# Setsuna Desktop Pet - Demo Setup Script (No Voice Synthesis)
 # Voice synthesis (SoVITS/STT) is disabled in this version.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -10,7 +10,7 @@ $FFMPEG_URL = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ff
 
 $DISCLAIMER = @'
 *******************************************************************************
-*                          RESONA DESKTOP PET - DEMO                          *
+*                          SETSUNA DESKTOP PET - DEMO                          *
 *******************************************************************************
 * This is a demo build with voice synthesis (SoVITS/STT) disabled.           *
 * Text chat, MCP tools, behavior triggers, and memory are fully functional.   *

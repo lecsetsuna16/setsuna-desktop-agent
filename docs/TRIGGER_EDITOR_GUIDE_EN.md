@@ -1,6 +1,6 @@
 # 🎮 Trigger Editor Quick Start Guide
 
-`trigger_editor.py` is the core logic configuration tool for ResonaDesktopPet. it allows you to bring your pet to "life" without writing a single line of code.
+`trigger_editor.py` is the core logic configuration tool for SetsunaDesktopPet. it allows you to bring your pet to "life" without writing a single line of code.
 
 ## 1. Basic Concepts
 A trigger consists of three parts:

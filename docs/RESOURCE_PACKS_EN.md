@@ -1,6 +1,6 @@
 # 📦 Resource Pack System
 
-Resource packs are the heart of ResonaDesktopPet, defining the character's appearance, voice, personality, and behavior.
+Resource packs are the heart of SetsunaDesktopPet, defining the character's appearance, voice, personality, and behavior.
 
 ## 1. Directory Structure
 A standard resource pack (e.g., `packs/Example_Pack/`) follows this structure:

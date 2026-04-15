@@ -3,9 +3,9 @@
 > **🚀 Want to create your own desktop pet?**  
 > Check out our latest **[🎨 Beginner's Resource Pack Creation & Modification Guide](docs/CUSTOM_PACK_GUIDE_FOR_BEGINNERS_EN.md)** and build your unique companion from scratch!
 
-# ResonaDesktopPet
+# SetsunaDesktopPet
 
-ResonaDesktopPet is a versatile desktop pet project that integrates Large Language Models (LLM), Text-to-Speech (SoVITS), and Speech-to-Text (STT) technologies to provide a vivid and natural interactive experience.
+SetsunaDesktopPet is a versatile desktop pet project that integrates Large Language Models (LLM), Text-to-Speech (SoVITS), and Speech-to-Text (STT) technologies to provide a vivid and natural interactive experience.
 Through customized resource packs and a wide variety of events, it offers an experience far beyond that of a typical desktop pet.
 Please obtain resource packs compatible with this program on your own.
 
@@ -86,7 +86,7 @@ To help you better understand and use this project, we have prepared detailed do
 3. **Configure API Key**:
    - Open `config.cfg` and enter your LLM API Key. You can also use locally deployed LLMs.
 4. **Configure SoVITS**:
-   - Obtain the SoVITS integrated package from [here](https://github.com/RVC-Boss/GPT-SoVITS/releases/tag/20250606v2pro). Extract it to the `GPT-SoVITS` directory so your path looks like: `ResonaDesktopPet\GPT-SoVITS\GPT-SoVITS-v2pro-20250604\api_v2.py`. Any method works as long as `api_v2.py` exists and can be called by the program.
+   - Obtain the SoVITS integrated package from [here](https://github.com/RVC-Boss/GPT-SoVITS/releases/tag/20250606v2pro). Extract it to the `GPT-SoVITS` directory so your path looks like: `SetsunaDesktopPet\GPT-SoVITS\GPT-SoVITS-v2pro-20250604\api_v2.py`. Any method works as long as `api_v2.py` exists and can be called by the program.
    - If SoVITS is enabled, the program will start a SoVITS server for real-time speech synthesis upon startup.
 5. **Start the Program**:
    - Double-click `run.bat` to begin interacting with your desktop pet.

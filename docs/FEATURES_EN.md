@@ -1,6 +1,6 @@
 # 🌟 Core Features
 
-ResonaDesktopPet is more than just a desktop ornament; it is a deep interaction system integrating multiple AI technologies.
+SetsunaDesktopPet is more than just a desktop ornament; it is a deep interaction system integrating multiple AI technologies.
 
 ## 1. Deep Conversational Interaction
 - **Multi-Model Support**: Supports various LLMs including OpenAI (DeepSeek/GPT-4), Google Gemini, and Anthropic Claude.

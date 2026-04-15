@@ -1,6 +1,6 @@
 # 下载后安装指南
 
-> 适用于从网盘下载 `Resona_Desktop_Pet_*.zip` 的用户。
+> 适用于从网盘下载 `Setsuna_Desktop_Pet_*.zip` 的用户。
 
 ---
 

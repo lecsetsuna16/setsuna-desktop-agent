@@ -28,7 +28,7 @@ class TrayIcon(QSystemTrayIcon):
             pixmap = QPixmap(32, 32)
             pixmap.fill(Qt.GlobalColor.transparent)
             self.setIcon(QIcon(pixmap))
-        self.setToolTip(f"Resona Desktop Pet - {self.config.character_name}")
+        self.setToolTip(f"Setsuna Desktop Pet - {self.config.character_name}")
 
     def _setup_menu(self):
         menu = QMenu()

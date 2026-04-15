@@ -1,6 +1,6 @@
 # 🎮 Trigger Editor 快速上手指南
 
-`trigger_editor.py` 是 ResonaDesktopPet 的核心逻辑配置工具。它让您不需要编写任何代码，就能让宠物拥有“生命力”。
+`trigger_editor.py` 是 SetsunaDesktopPet 的核心逻辑配置工具。它让您不需要编写任何代码，就能让宠物拥有“生命力”。
 
 ## 1. 基础概念
 一个触发器由三部分组成：

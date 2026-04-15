@@ -1,4 +1,4 @@
-# build_release.ps1 - Resona Desktop Pet release packager
+# build_release.ps1 - Setsuna Desktop Pet release packager
 # Usage: right-click -> Run with PowerShell
 #        or: powershell -ExecutionPolicy Bypass -File build_release.ps1
 
@@ -8,13 +8,13 @@ $root    = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $root) { $root = $PWD.Path }
 $stamp   = Get-Date -Format "yyyyMMdd_HHmm"
 $staging = Join-Path $env:TEMP "Resona_Staging_$stamp"
-$zipOut  = Join-Path $root "Resona_Desktop_Pet_$stamp.zip"
+$zipOut  = Join-Path $root "Setsuna_Desktop_Pet_$stamp.zip"
 
 function Wait-Key { Read-Host "`nPress Enter to close" }
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "  Resona Desktop Pet - Release Builder"         -ForegroundColor Cyan
+Write-Host "  Setsuna Desktop Pet - Release Builder"         -ForegroundColor Cyan
 Write-Host "  Root  : $root"                                -ForegroundColor Gray
 Write-Host "  Output: $zipOut"                              -ForegroundColor Gray
 Write-Host "================================================" -ForegroundColor Cyan

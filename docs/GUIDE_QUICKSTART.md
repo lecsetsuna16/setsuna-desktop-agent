@@ -1,4 +1,4 @@
-# Resona Desktop Pet — 新手使用指南
+# Setsuna Desktop Pet — 新手使用指南
 
 > 从解压到第一次对话，全流程说明。  
 > 面向对象：能解压文件、会编辑文本、大概知道 API Key 是什么的用户。

@@ -1,4 +1,4 @@
-# Resona Desktop Pet Ultimate Setup Script
+# Setsuna Desktop Pet Ultimate Setup Script
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 

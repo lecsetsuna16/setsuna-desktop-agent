@@ -1,4 +1,4 @@
-# Resona Desktop Pet — Memory System Optimization Spec
+# Setsuna Desktop Pet — Memory System Optimization Spec
 
 > Target audience: Any coding agent or developer taking over this codebase.
 > This document describes the **reference architecture** (Claude Code), the **current state** of Resona's memory system, identified deficiencies, and a concrete remediation plan.

@@ -1,4 +1,4 @@
-# Resona Desktop Pet - One-Click Zero-Config Setup Script
+# Setsuna Desktop Pet - One-Click Zero-Config Setup Script
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
