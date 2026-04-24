@@ -473,6 +473,28 @@ class LLMBackend:
         if extra_context:
             messages.append({"role": "user", "content": extra_context})
 
+        # ── DeepSeek V4 角色沉浸模式注入 ───────────────────────────────────────
+        # 在 session 第一条 user 消息末尾注入角色沉浸指令，
+        # 使模型在 <think> 阶段以角色第一人称内心独白进行推理，提升 RP 情感层次。
+        # 原理：指令进入历史后自动续航，后续轮次无需重复注入。
+        # 参考：https://github.com/victorchen96/deepseek_v4_rolepaly_instruct
+        _DEEPSEEK_INNER_OS_MARKER = (
+            "\n\n【角色沉浸要求】在你的思考过程（<think>标签内）中，请遵守以下规则：\n"
+            "1. 请以角色第一人称进行内心独白，用括号包裹内心活动，例如\u300c（心想：……）\u300d或\u300c(内心OS：……)\u300d\n"
+            "2. 用第一人称描写角色的内心感受，例如\u300c我心想\u300d\u300c我觉得\u300d\u300c我暗自\u300d等\n"
+            "3. 思考内容应沉浸在角色中，通过内心独白分析剧情和规划回复"
+        )
+        _is_first_message = not raw_history
+        _is_deepseek = "deepseek" in (self._active_model_name or "").lower()
+        if not _is_deepseek:
+            try:
+                _llm_cfg = self.config.get_llm_config()
+                _is_deepseek = "deepseek" in _llm_cfg.get("base_url", "").lower()
+            except Exception:
+                pass
+        if _is_first_message and _is_deepseek:
+            processed_question = processed_question + _DEEPSEEK_INNER_OS_MARKER
+
         messages.append({"role": "user", "content": processed_question})
         return messages
 
