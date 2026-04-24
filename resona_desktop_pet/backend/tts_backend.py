@@ -105,7 +105,18 @@ Parameters: {json.dumps(payload, ensure_ascii=False, indent=2)}
     async def synthesize(self, text: str, emotion: str = "<E:smile>", language: Optional[str] = None, pack_id: Optional[str] = None) -> TTSResult:
         if not self.config.sovits_enabled: return TTSResult(error="TTS is disabled")
         text = text.replace("\u30fb", " ")
-        
+        # Sanitize GBK-incompatible Unicode characters that SoVITS chokes on
+        _GBK_REPLACEMENTS = {
+            "\u301c": "\uff5e",  # 〜 WAVE DASH → ～ FULLWIDTH TILDE
+            "\u2015": "\u30fc",  # ― HORIZONTAL BAR → ー KATAKANA-HIRAGANA PROLONGED SOUND MARK
+            "\u2010": "-",       # ‐ HYPHEN → ASCII hyphen
+            "\u2019": "'",       # ' RIGHT SINGLE QUOTATION → ASCII apostrophe
+            "\u201c": "\u300c",  # " LEFT DOUBLE QUOTATION → 「
+            "\u201d": "\u300d",  # " RIGHT DOUBLE QUOTATION → 」
+        }
+        for bad, good in _GBK_REPLACEMENTS.items():
+            text = text.replace(bad, good)
+
         log(f"[TTS] Synthesizing: {text[:30]}... ({emotion}) pack={pack_id}")
         if not await self.load_model():
             log("[TTS] SoVITS API not available")
