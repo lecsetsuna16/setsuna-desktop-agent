@@ -178,6 +178,10 @@ mcpserver/auto_keywords.json
 # Minecraft Runtime Data
 **/mods/
 **/config/
+# Track application configuration code, but not local config data or caches.
+!/resona_desktop_pet/config/
+/resona_desktop_pet/config/*
+!/resona_desktop_pet/config/*.py
 **/resourcepacks/
 **/saves/
 **/screenshots/
