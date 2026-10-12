@@ -193,7 +193,8 @@ Parameters: {json.dumps(payload, ensure_ascii=False, indent=2)}
                                     "-ac", "1",
                                     "-sample_fmt", "s16",
                                     pcm_path
-                                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
                                 log(f"[TTS] FFmpeg resample exit={result.returncode}, {sr}Hz -> {TARGET_SR}Hz PCM_16 (cmd={ffmpeg_cmd})")
                                 if result.returncode == 0:
                                     output_path = pcm_path

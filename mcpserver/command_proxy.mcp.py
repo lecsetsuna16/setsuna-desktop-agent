@@ -1,7 +1,6 @@
 import configparser
 import subprocess
-import tkinter as tk
-from tkinter import messagebox
+import sys
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
@@ -41,6 +40,13 @@ BLOCKED_KEYWORDS = [
     # 防绕过：Base64 编码执行 & Invoke-Expression 全称
     "invoke-expression", "-encodedcommand", "-enc ",
     "frombase64string", "::frombase64",
+    # .NET 文件写入方法（绕过 filesystem_tools 保护）
+    "[system.io.file]",          # System.IO.File 静态类
+    "::writealltext",            # File::WriteAllText
+    "::appendalltext",           # File::AppendAllText
+    "::writeallines",            # File::WriteAllLines
+    "::writeallbytes",           # File::WriteAllBytes
+    "streamwriter",              # new StreamWriter(path)
     # LOL 二进制下载手法
     "start-bitstransfer",       # BITS 后台下载
     "bitsadmin",                # BITS 命令行工具
@@ -72,16 +78,24 @@ def _is_cwd_allowed(cwd: str) -> bool:
     return any(target == root or root in target.parents for root in ALLOWED_CWD_ROOTS)
 
 def _require_user_confirmation(command: str) -> bool:
-    """人工确认弹窗"""
+    """Keep explicit confirmation available in Python's Windows embeddable build."""
     try:
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
         msg = f"雪菜 (MCP) 请求执行系统命令：\n\n【 {command} 】\n\n是否允许？"
-        result = messagebox.askyesno("⚠️ 安全确认", msg, parent=root)
-        root.destroy()
-        return result
-    except:
+        if sys.platform == "win32":
+            import ctypes
+            # Yes/No, question icon, default No, foreground and topmost.
+            flags = 0x00000004 | 0x00000020 | 0x00000100 | 0x00010000 | 0x00040000
+            return ctypes.windll.user32.MessageBoxW(None, msg, "雪菜 · 命令执行确认", flags) == 6
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        try:
+            root.withdraw()
+            root.attributes("-topmost", True)
+            return messagebox.askyesno("安全确认", msg, parent=root, default="no")
+        finally:
+            root.destroy()
+    except Exception:
         return False
 # ==================
 

@@ -53,5 +53,20 @@
         "ref_wav": "shy.wav",
         "ref_text": "してないよ！……なんでかわからないけど、来ちゃってたんだよ！",
         "ref_lang": "ja"
+    },
+    "<E:neutral>": {
+        "ref_wav": "serious.wav",
+        "ref_text": "収入が足りなくて、演奏活動がままならないプロとか、海外留学したくても、できない学生とか",
+        "ref_lang": "ja"
+    },
+    "<E:smile_closed>": {
+        "ref_wav": "smile.wav",
+        "ref_text": "今日もご主人様のそばにいられて、本当に良かったです。",
+        "ref_lang": "ja"
+    },
+    "<E:cry>": {
+        "ref_wav": "sad.wav",
+        "ref_text": "どうして……あの人がいるだけで、ご主人様の目は私から逸れてしまうんですか？",
+        "ref_lang": "ja"
     }
 }

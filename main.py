@@ -16,6 +16,8 @@ from datetime import datetime
 from typing import Any, Optional
 from PySide6.QtCore import QObject, Signal, QTimer, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
+QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+from resona_desktop_pet.live2d.canvas import Live2DCanvas
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from resona_desktop_pet.config import ConfigManager
 from resona_desktop_pet.backend import LLMBackend, TTSBackend, STTBackend, MCPManager
@@ -60,10 +62,12 @@ class TeeLogger:
         self.terminal = terminal
         self.log_file = open(filename, "a", encoding="utf-8", buffering=1)
     def write(self, message):
-        self.terminal.write(message)
-        self.log_file.write(message)
+        if self.terminal is not None:
+            self.terminal.write(message)
+        return self.log_file.write(message)
     def flush(self):
-        self.terminal.flush()
+        if self.terminal is not None:
+            self.terminal.flush()
         self.log_file.flush()
     def isatty(self):
         return getattr(self.terminal, 'isatty', lambda: False)()
@@ -71,6 +75,8 @@ def log(message):
     logging.info(message)
 class AudioPlayer(QObject):
     playback_finished = Signal()
+    playback_started = Signal()
+    playback_failed = Signal(str)
     def __init__(self, parent=None):
         super().__init__(parent)
         self._player = QMediaPlayer()
@@ -78,6 +84,12 @@ class AudioPlayer(QObject):
         self._audio_output.setVolume(1.0)
         self._player.setAudioOutput(self._audio_output)
         self._player.mediaStatusChanged.connect(self._on_status_changed)
+        self._player.playbackStateChanged.connect(self._on_playback_state)
+        self._player.errorOccurred.connect(lambda error, message: self.playback_failed.emit(message))
+    def _on_playback_state(self, state):
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            self.playback_started.emit()
+
     def play(self, file_path: str):
         from PySide6.QtCore import QUrl
         self._player.setSource(QUrl.fromLocalFile(file_path))
@@ -398,6 +410,7 @@ class ApplicationController(QObject):
     stt_result_ready = Signal(object)
     request_stt_start = Signal()
     request_global_show = Signal()
+    llm_activity = Signal()
     pack_switch_ready = Signal()
     external_query_signal = Signal(str)
     def __init__(self, sovits_log_path: Optional[Path] = None):
@@ -433,8 +446,8 @@ class ApplicationController(QObject):
             output = ""
             try:
                 result = subprocess.run(
-                    'pnputil /enum-devices /class Display',
-                    shell=True,
+                    ['pnputil', '/enum-devices', '/class', 'Display'],
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
                     stderr=subprocess.STDOUT,
                     stdout=subprocess.PIPE,
                     timeout=2
@@ -479,12 +492,15 @@ class ApplicationController(QObject):
         self._trigger_cooldown_end = 0
         self._post_busy_cooldown_end = 0
         self._last_busy_state = False
+        self._physical_interaction_last_at = {}
+        self._pending_physical_interaction = None
         self._pending_triggers = []
         self._is_chain_executing = False
         self._chain_cancelled = False
         self._current_sequence = []
         self._current_sequence_idx = 0
         self._current_chain_callback = None
+        self._action_chain_playback_connected = False
         self._drop_tts_results = False
         self.current_weather = {}
         self.interaction_locked = False
@@ -505,11 +521,8 @@ class ApplicationController(QObject):
         self.mcp_manager = MCPManager(self.config)
         self.llm_backend = LLMBackend(self.config, log_path=llm_log_file, mcp_manager=self.mcp_manager)
         
-        self._current_watchdog_interval = 300000  
-        def reset_watchdog():
-            if self._busy_watchdog.isActive():
-                self._busy_watchdog.start(self._current_watchdog_interval)
-        self.llm_backend.set_on_activity_callback(reset_watchdog)
+        self._current_watchdog_interval = 300000
+        self.llm_backend.set_on_activity_callback(self.llm_activity.emit)
         
         self.tts_backend = TTSBackend(self.config, sovits_log_path=sovits_log_path)
         self.stt_backend = STTBackend(self.config)
@@ -528,6 +541,14 @@ class ApplicationController(QObject):
         self.audio_player.playback_finished.connect(self._on_audio_finished)
         self.main_window = MainWindow(self.config)
         self.main_window.controller = self
+        self._pending_audio_reply = None
+        self.audio_player.playback_started.connect(self._on_audio_started)
+        self.audio_player.playback_failed.connect(self._on_audio_failed)
+        from resona_desktop_pet.live2d.tools import install_live2d_tools
+        from resona_desktop_pet.live2d.audio import AudioLipSync
+        install_live2d_tools(self.mcp_manager, self.main_window.character)
+        self.live2d_lipsync = AudioLipSync(self.audio_player._player, self)
+        self.live2d_lipsync.level.connect(self.main_window.character.set_live2d_audio)
         self.timer_scheduler = TimerScheduler(self)
 
         self.tray_icon = TrayIcon(self.main_window)
@@ -561,6 +582,7 @@ class ApplicationController(QObject):
         log("[PackSwitch] pack_changed signal connected")
         self.pack_switch_ready.connect(self._finalize_ui_after_pack_change, Qt.QueuedConnection)
         self.main_window.request_query.connect(self._handle_user_query)
+        self.main_window.physical_interaction.connect(self._handle_physical_interaction)
         self.external_query_signal.connect(self._handle_user_query)
         self.main_window.replay_requested.connect(self._replay_last_response)
         self.main_window.settings_requested.connect(self._show_settings)
@@ -575,6 +597,7 @@ class ApplicationController(QObject):
         self._busy_watchdog = QTimer()
         self._busy_watchdog.setSingleShot(True)
         self._busy_watchdog.timeout.connect(self._force_unlock)
+        self.llm_activity.connect(self._reset_busy_watchdog_from_activity)
         self._pack_switch_wait_timer = QTimer()
         self._pack_switch_wait_timer.setInterval(500)
         self._pack_switch_wait_timer.timeout.connect(self._check_pack_switch_ready)
@@ -582,6 +605,7 @@ class ApplicationController(QObject):
         self._pack_switch_deadline = 0.0
         self._last_question_time = time.time()
         self._idle_trigger_count = 0
+        self.main_window.character.local_music.changed.connect(self._sync_singing_trigger_guard)
         self._idle_trigger_timer = QTimer()
         self._idle_trigger_timer.timeout.connect(self._check_idle_trigger)
         if self.config.idle_trigger_enabled:
@@ -592,6 +616,23 @@ class ApplicationController(QObject):
     @property
     def is_busy(self) -> bool:
         return self._is_chain_executing or self.main_window.is_busy or self.interaction_locked
+    @property
+    def singing_triggers_suppressed(self) -> bool:
+        character = self.main_window.character
+        music = character.local_music
+        if music.trigger_suppressed or music.pending:
+            return True
+        canvas = character._live2d
+        singing = (canvas.snapshot.get("singing") or {}) if canvas is not None else {}
+        return bool(singing.get("active", False))
+
+    def _sync_singing_trigger_guard(self):
+        if self.singing_triggers_suppressed:
+            self._pending_triggers.clear()
+            self._last_question_time = time.time()
+            if self._is_chain_executing:
+                self._cancel_action_chain()
+
     def _init_hotkeys(self):
         try:
             import keyboard
@@ -636,6 +677,10 @@ class ApplicationController(QObject):
             log("[Watchdog] BUSY state timeout! Force unlocking to prevent freeze.")
             self._is_chain_executing = False
             self.main_window.finish_processing()
+
+    def _reset_busy_watchdog_from_activity(self):
+        if self._busy_watchdog.isActive():
+            self._busy_watchdog.start(self._current_watchdog_interval)
     def _mark_tts_activity(self):
         self._tts_activity_at = time.time()
 
@@ -971,6 +1016,25 @@ class ApplicationController(QObject):
         self._busy_watchdog.start(self._current_watchdog_interval)
         self.main_window.start_thinking()
         asyncio.run_coroutine_threadsafe(self._query_llm(text), self._loop)
+
+    def _handle_physical_interaction(self, interaction: str):
+        """Legacy touch interactions are retired; singing uses the Live2D tool."""
+        self._pending_physical_interaction = None
+
+    async def _query_llm_physical_interaction(self, prompt: str, interaction: str):
+        get_llm_logger()
+        try:
+            response = await self.llm_backend.query(
+                prompt,
+                pack_id=self.config.pack_manager.active_pack_id,
+                source="physical_interaction",
+            )
+            self.llm_response_ready.emit(response)
+        except Exception as e:
+            log(f"[Interaction] LLM reaction failed for {interaction}: {e}")
+            from resona_desktop_pet.backend.llm_backend import LLMResponse
+            self.llm_response_ready.emit(LLMResponse(error=str(e)))
+
     async def _query_llm(self, text: str):
         get_llm_logger()
         
@@ -995,23 +1059,43 @@ class ApplicationController(QObject):
             return
         self._current_text = response.text_display
         self._current_emotion = response.emotion
+        self.main_window.prepare_response(response.emotion)
         tts_lang_for_trigger = getattr(response, 'tts_lang', None)
-        self._trigger_voice_response(response.text_display, response.emotion, None, tts_text=response.text_tts, tts_lang=tts_lang_for_trigger)
+        self._trigger_voice_response(
+            response.text_display,
+            response.emotion,
+            None,
+            tts_text=response.text_tts,
+            tts_lang=tts_lang_for_trigger,
+            skip_tts=getattr(response, "skip_tts", False),
+        )
     def _handle_tts_ready(self, result):
         log(f"[Main] TTS synthesized ready. Success={not result.error}")
         if self._drop_tts_results or self._pack_switch_pending:
             log("[Main] Dropping TTS result due to pack switch.")
             return
         self._mark_tts_activity()
-        self.main_window.show_response(self._current_text, self._current_emotion)
         if result.error:
             self._show_error_response("sovits_timeout_error", result.error)
             return
         if result.audio_path:
             self._mark_tts_activity()
+            self._pending_audio_reply = (self._current_text, self._current_emotion)
             self.audio_player.play(result.audio_path)
         else:
-            QTimer.singleShot(2000, self.main_window.finish_processing)
+            self.main_window.set_speaking(False)
+            self.main_window.show_response(self._current_text, self._current_emotion)
+            self.main_window.text_display_timer.start(2000)
+
+    def _on_audio_started(self):
+        reply, self._pending_audio_reply = self._pending_audio_reply, None
+        if reply is not None:
+            self.main_window.show_response(*reply)
+
+    def _on_audio_failed(self, message):
+        self._pending_audio_reply = None
+        self._show_error_response("sovits_timeout_error", message)
+
     def _on_audio_finished(self):
         try:
             log("[Main] Audio playback finished.")
@@ -1058,7 +1142,7 @@ class ApplicationController(QObject):
         except Exception as e:
             log(f"[Main] Failed to start external WS server: {e}")
 
-    def _trigger_voice_response(self, text, emotion, voice_file=None, is_behavior=False, tts_text=None, tts_lang=None):
+    def _trigger_voice_response(self, text, emotion, voice_file=None, is_behavior=False, tts_text=None, tts_lang=None, skip_tts=False):
         if is_behavior and self.config.disable_actions:
             return
         v_path = None
@@ -1082,16 +1166,17 @@ class ApplicationController(QObject):
         if v_path and v_path.exists():
             log(f"[Main] Playing pre-recorded: {v_path}")
             self.main_window.set_speaking(True)
-            self.main_window.show_response(text, emotion)
+            self._pending_audio_reply = (text, emotion)
             self._mark_tts_activity()
             self.audio_player.play(str(v_path))
-        elif self.config.sovits_enabled and not is_behavior:
+        elif self.config.sovits_enabled and not is_behavior and not skip_tts:
             log("[Main] Handing over to SoVITS synthesis chain.")
             self.main_window.set_speaking(True)
             self._mark_tts_activity()
             asyncio.run_coroutine_threadsafe(self._generate_tts(tts_text or text, emotion, language=tts_lang), self._loop)
         else:
             log("[Main] No audio source available, showing text response with timeout.")
+            self.main_window.set_speaking(False)
             self.main_window.show_behavior_response_with_timeout(text, emotion)
     async def _generate_tts(self, text: str, emotion: str, language: Optional[str] = None):
         get_sovits_logger()
@@ -1103,6 +1188,9 @@ class ApplicationController(QObject):
         result = await self.tts_backend.synthesize(text, emotion, language=language)
         self.tts_ready.emit(result)
     def _handle_behavior_trigger(self, actions: list):
+        if self.singing_triggers_suppressed:
+            self._sync_singing_trigger_guard()
+            return
         if not actions or self.main_window.manual_hidden: return
         if self._pack_switch_pending: return
         if self.config.disable_actions: return
@@ -1128,7 +1216,12 @@ class ApplicationController(QObject):
             self._trigger_cooldown_end = now + self.config.trigger_cooldown
             self._execute_actions_chain(actions)
     def _check_pending_triggers(self):
+        if self.singing_triggers_suppressed:
+            self._sync_singing_trigger_guard()
+            return
         now = time.time()
+        if self._try_start_pending_physical_interaction(now):
+            return
         if self.config.disable_actions:
             if self._pending_triggers:
                 self._pending_triggers = []
@@ -1142,7 +1235,14 @@ class ApplicationController(QObject):
             self._trigger_cooldown_end = now + self.config.trigger_cooldown
             self._execute_actions_chain(trigger)
 
+    def _try_start_pending_physical_interaction(self, now: float) -> bool:
+        self._pending_physical_interaction = None
+        return False
+
     def _check_idle_trigger(self):
+        if self.singing_triggers_suppressed:
+            self._last_question_time = time.time()
+            return
         if not self.config.idle_trigger_enabled:
             return
         if self.is_busy:
@@ -1167,6 +1267,8 @@ class ApplicationController(QObject):
                 self._trigger_idle_question()
 
     def _trigger_idle_question(self):
+        if self.singing_triggers_suppressed:
+            return
         if self.is_busy:
             return
         self._idle_trigger_count += 1
@@ -1200,8 +1302,10 @@ class ApplicationController(QObject):
         self._current_sequence_idx = 0
         self._pending_triggers = []
         if self._current_chain_callback:
-            try: self.audio_player.playback_finished.disconnect(self._current_chain_callback)
-            except: pass
+            if self._action_chain_playback_connected:
+                try: self.audio_player.playback_finished.disconnect(self._current_chain_callback)
+                except: pass
+                self._action_chain_playback_connected = False
         self._current_chain_callback = None
         try:
             self.audio_player.stop()
@@ -1217,6 +1321,8 @@ class ApplicationController(QObject):
         except Exception:
             pass
     def _execute_actions_chain(self, actions):
+        if self.singing_triggers_suppressed:
+            return
         if self.config.disable_actions:
             return
         if self.config.action_bring_to_front and not self.config.always_on_top:
@@ -1230,6 +1336,9 @@ class ApplicationController(QObject):
         self._current_chain_callback = None
 
         def execute_next():
+            if self.singing_triggers_suppressed:
+                self._cancel_action_chain()
+                return
             if self._chain_cancelled:
                 return
             if self.config.disable_actions:
@@ -1237,9 +1346,10 @@ class ApplicationController(QObject):
                 self._is_chain_executing = False
                 return
             if self._current_sequence_idx >= len(self._current_sequence):
-                if self._current_chain_callback:
+                if self._current_chain_callback and self._action_chain_playback_connected:
                     try: self.audio_player.playback_finished.disconnect(self._current_chain_callback)
                     except: pass
+                    self._action_chain_playback_connected = False
                 self._current_chain_callback = None
                 self._is_chain_executing = False
                 return
@@ -1273,9 +1383,9 @@ class ApplicationController(QObject):
                 return
 
             if action.get("type") == "speak":
-                try: self.audio_player.playback_finished.disconnect(execute_next)
-                except: pass
-                self.audio_player.playback_finished.connect(execute_next)
+                if not self._action_chain_playback_connected:
+                    self.audio_player.playback_finished.connect(execute_next)
+                    self._action_chain_playback_connected = True
                 self._trigger_voice_response(action.get("text", ""), action.get("emotion", "<E:smile>"), action.get("voice_file"), is_behavior=True)
                 return
 
@@ -1393,6 +1503,7 @@ class ApplicationController(QObject):
     def _handle_pack_change(self, pack_id: str):
         log(f"[PackSwitch] Start: requested={pack_id} current_active={self.config.pack_manager.active_pack_id} project_root={self.project_root}")
         self._cancel_action_chain()
+        self._pending_physical_interaction = None
         self.main_window.hide()
         if hasattr(self, "timer_scheduler"):
             self.timer_scheduler.reset()
@@ -1507,6 +1618,9 @@ class ApplicationController(QObject):
             print(f"[PackSwitch] ERROR during UI finalize: {e}")
             traceback.print_exc()
     def _show_error_response(self, error_type, details=""):
+        self._pending_audio_reply = None
+        self.main_window.character.cancel_reply()
+        self.main_window.set_speaking(False)
         error_config_path = self.config.pack_manager.get_path("logic", "error_config")
         text, emotion, audio = f"Error: {details}", "<E:sad>", None
         if error_config_path and error_config_path.exists():
@@ -1701,10 +1815,32 @@ def is_admin():
     try: return ctypes.windll.shell32.IsUserAnAdmin()
     except: return False
 def run_as_admin():
-    args = sys.argv[:]
+    import subprocess
+    # runpy temporarily sets argv[0] to main.py. Re-enter the bootstrap so a
+    # pythonw child retains dependency setup and a real diagnostic output log.
+    bootstrap = project_root / "run_live2d.py"
+    entry = bootstrap if bootstrap.is_file() else Path(__file__).resolve()
+    args = [str(entry), *sys.argv[1:]]
     if "--log-file" not in args:
         args.extend(["--log-file", str(log_file)])
-    ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(args), str(project_root), 1)
+    parameters = subprocess.list2cmdline(args)
+    log("[Startup] Requesting administrator permission through bootstrap.")
+    try:
+        result = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, parameters, str(project_root), 1)
+        if result > 32:
+            log("[Startup] Administrator launch accepted.")
+            return True
+        error = f"Windows return code: {result}"
+    except Exception as exc:
+        error = str(exc)
+    log(f"[Startup] Administrator launch cancelled or failed: {error}")
+    ctypes.windll.user32.MessageBoxW(None,
+        "启动未完成：管理员权限请求被取消或启动失败。\n"
+        "当前感知规则要求管理员权限；请重新打开并允许权限请求。\n"
+        "详情见 logs/live2d_launch.log。",
+        "雪菜桌宠 · 启动未完成", 0x10)
+    return False
+
 
 def main():
     import argparse
@@ -1741,8 +1877,8 @@ def main():
                     if check_sensitive(rule): needs_admin = True; break
         except: pass
     if needs_admin and sys.platform == 'win32' and not is_admin():
-        run_as_admin()
-        sys.exit()
+        accepted = run_as_admin()
+        sys.exit(0 if accepted else 1)
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     controller = ApplicationController(sovits_log_path=sovits_log_file)

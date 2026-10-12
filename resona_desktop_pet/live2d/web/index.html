@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>雪菜 Live2D</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}canvas{width:100%;height:100%;display:block}#error{position:absolute;bottom:8px;color:#fff;background:#722b39;padding:8px;font:13px system-ui}#error:empty{display:none}</style>
+</head><body><canvas id="model"></canvas><div id="error"></div>
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="vendor/Core/live2dcubismcore.min.js"></script><script type="module">import(new URLSearchParams(location.search).get("renderer")==="v081"?"./v081.js":"./app.js");</script></body></html>

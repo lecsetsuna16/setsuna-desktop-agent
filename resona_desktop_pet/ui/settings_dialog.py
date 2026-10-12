@@ -406,8 +406,15 @@ class SettingsDialog(QDialog):
         self.model_name_edit = QLineEdit()
         api_layout.addRow("Model Name (need restart):", self.model_name_edit)
 
+        self.routing_enabled_check = QCheckBox("Enable manual chat/tool model routing")
+        self.routing_enabled_check.setToolTip(
+            "Off: every request uses Model Name.\n"
+            "On: simple chat may use Chat Model Name while tools use Model Name."
+        )
+        api_layout.addRow(self.routing_enabled_check)
+
         self.chat_model_name_edit = QLineEdit()
-        self.chat_model_name_edit.setPlaceholderText("Leave empty if no routing / single model")
+        self.chat_model_name_edit.setPlaceholderText("Used only when manual routing is enabled")
         self.chat_model_name_edit.setToolTip(
             "Chat/routing model used for simple replies (no tools).\n"
             "When set, the main Model Name above is used only for tool/reasoning calls.\n"
@@ -788,6 +795,7 @@ class SettingsDialog(QDialog):
         self.api_key_edit.setText(llm_config.get("api_key", ""))
         self.base_url_edit.setText(llm_config.get("base_url", ""))
         self.model_name_edit.setText(llm_config.get("model_name", ""))
+        self.routing_enabled_check.setChecked(llm_config.get("routing_enabled", False))
         self.chat_model_name_edit.setText(llm_config.get("chat_model_name", ""))
 
     def _on_model_changed(self, index: int):
@@ -826,6 +834,11 @@ class SettingsDialog(QDialog):
             self.config.set(section, "api_key", self.api_key_edit.text())
             self.config.set(section, "base_url", self.base_url_edit.text())
             self.config.set(section, "model_name", self.model_name_edit.text())
+            self.config.set(
+                section,
+                "routing_enabled",
+                str(self.routing_enabled_check.isChecked()).lower(),
+            )
             chat_model = self.chat_model_name_edit.text().strip()
             if chat_model:
                 self.config.set(section, "chat_model_name", chat_model)

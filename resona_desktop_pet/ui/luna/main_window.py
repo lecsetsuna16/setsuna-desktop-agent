@@ -8,7 +8,7 @@ import ctypes
 from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, Signal, QEvent, QPoint, QRect, QPropertyAnimation, QEasingCurve, QObject
 from PySide6.QtGui import QMouseEvent, QWheelEvent, QPixmap, QCursor, QGuiApplication, QAction, QActionGroup, QIcon
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QMenu, QGraphicsOpacityEffect, QApplication
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QMenu, QApplication
 from resona_desktop_pet.config import ConfigManager
 from resona_desktop_pet.physics import PhysicsBridge
 from .character_view import CharacterView
@@ -19,7 +19,8 @@ class MainWindow(QWidget):
     replay_requested = Signal()
     pack_changed = Signal(str)
     settings_requested = Signal()
-    file_dropped = Signal(dict)  
+    file_dropped = Signal(dict)
+    physical_interaction = Signal(str)
     def __init__(self, config: ConfigManager, parent: QWidget = None):
         super().__init__(parent)
         self.config = config
@@ -58,6 +59,12 @@ class MainWindow(QWidget):
         self.setObjectName("MainRoot")
         self.character = CharacterView(self)
         self.io = IOOverlay(self)
+        self.io.bind_music(self.character.local_music)
+        # Idle fade hides dialogue; keep its reserved space so the character
+        # stays anchored instead of jumping when the text reappears.
+        dialogue_policy = self.io.sizePolicy()
+        dialogue_policy.setRetainSizeWhenHidden(True)
+        self.io.setSizePolicy(dialogue_policy)
         self.io.set_names(self.config.username, self.config.character_name)
         self.io.raise_()
         layout = QVBoxLayout(self)
@@ -70,10 +77,14 @@ class MainWindow(QWidget):
 
         self.character.setup(self.project_root, self.config.default_outfit)
         self.character.set_emotion("<E:smile>", deterministic=True)
+        self.character.setMouseTracking(True)
         self.sync_window_to_sprite()
 
         img_rect = self.character.image_rect()
-        if img_rect.width() > 0 and img_rect.height() > 0:
+        if self.character._live2d is not None:
+            self.character.set_scale(self._default_live2d_scale())
+            self.ui_scale = self.character.get_scale()
+        elif img_rect.width() > 0 and img_rect.height() > 0:
             target_w = self.config.sprite_width
             target_h = self.config.sprite_height
             scale_w = target_w / img_rect.width() if target_w > 0 else 999.0
@@ -82,17 +93,15 @@ class MainWindow(QWidget):
             if initial_scale == 999.0:
                 initial_scale = 1.0
             self.character.set_scale(initial_scale)
-            self.ui_scale = initial_scale
+            self.ui_scale = self.character.get_scale()
         else:
             self.ui_scale = 1.0
         self.character.setCursor(Qt.CursorShape.OpenHandCursor)
         self.installEventFilter(self)
         self.character.installEventFilter(self)
         self.io.installEventFilter(self)
-        self.char_opacity = QGraphicsOpacityEffect(self.character)
-        self.char_opacity.setOpacity(1.0)
-        self.character.setGraphicsEffect(self.char_opacity)
-        self.fade_anim = QPropertyAnimation(self.char_opacity, b"opacity", self)
+        self.character.set_render_opacity(1.0)
+        self.fade_anim = QPropertyAnimation(self.character, b"renderOpacity", self)
         self.fade_anim.setDuration(220)
         self.fade_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
         self.idle_timer = QTimer(self)
@@ -118,9 +127,10 @@ class MainWindow(QWidget):
         self.thinking_timer.timeout.connect(self.show_thinking_text)
         self.thinking_switch_timer = QTimer(self)
         self.thinking_switch_timer.timeout.connect(self.switch_thinking_text)
+        self._interaction_preview_token = 0
         self.text_display_timer = QTimer(self)
         self.text_display_timer.setSingleShot(True)
-        self.text_display_timer.timeout.connect(self.finish_processing)
+        self.text_display_timer.timeout.connect(self._finish_text_display)
         self.idle_sprite_timer = QTimer(self)
         self.idle_sprite_timer.setInterval(60000)
         self.idle_sprite_timer.timeout.connect(self._on_idle_sprite_cycle)
@@ -129,6 +139,7 @@ class MainWindow(QWidget):
         self.io.text_changed.connect(self.on_input_text_changed)
         self.io.file_dropped.connect(self.on_file_dropped)
         self.character.rightClicked.connect(self.show_context_menu)
+        self.character.physicalInteraction.connect(self.physical_interaction.emit)
         
         QTimer.singleShot(0, self.sync_window_to_sprite)
         self.dialogue = self.DialogueAdapter(self)
@@ -142,6 +153,9 @@ class MainWindow(QWidget):
         self.setAcceptDrops(True)
         self.character.setAcceptDrops(True)
         self.io.setAcceptDrops(True)
+
+        from resona_desktop_pet.live2d.mouse_gaze import MouseGazeController
+        self._mouse_gaze = MouseGazeController(self)
 
     class DialogueAdapter:
         def __init__(self, window):
@@ -208,7 +222,7 @@ class MainWindow(QWidget):
                 print(f"Error loading listening texts: {e}")
 
     def on_input_text_changed(self, text: str):
-        if self.is_listening:
+        if self.is_listening or self.is_processing or self.is_speaking or self.is_displaying_text:
             return
         if text.strip():
             if self.character.current_emotion != "<E:thinking>":
@@ -219,6 +233,10 @@ class MainWindow(QWidget):
 
     def start_thinking(self):
         if self.is_listening: return
+        self.text_display_timer.stop()
+        self.character.begin_reply()
+        self.character.set_live2d_activity("thinking")
+        self._interaction_preview_token += 1
         self.is_processing = True
         self.idle_sprite_timer.stop()
         self.cancel_idle_fade()
@@ -233,6 +251,41 @@ class MainWindow(QWidget):
             if self.config.thinking_text_switch:
                 self.thinking_switch_timer.stop()
                 self.thinking_switch_timer.start(int(self.config.thinking_text_switch_time * 1000))
+        else:
+            self.io.show_status("Thinking...")
+
+    def start_interaction_thinking(self, interaction: str):
+        """Show an immediate local reaction while the LLM works in parallel."""
+        if self.is_listening:
+            return
+        previews = {
+            "head_pat": ("嗯……？", "<E:shy>"),
+            "cheek_poke": ("呀！", "<E:surprised>"),
+            "hug": ("……！", "<E:shy>"),
+            "shoulder_pat": ("嗯。", "<E:smile>"),
+        }
+        preview_text, preview_emotion = previews.get(
+            interaction, ("嗯？", "<E:surprised>")
+        )
+        self._interaction_preview_token += 1
+        token = self._interaction_preview_token
+        self.is_processing = True
+        self.idle_sprite_timer.stop()
+        self.thinking_timer.stop()
+        self.thinking_switch_timer.stop()
+        self.cancel_idle_fade()
+        self.set_emotion(preview_emotion)
+        self.dialogue.show_name(self.config.character_name)
+        self.set_input_locked(True, "Thinking...")
+        self.io.show_status(preview_text)
+        QTimer.singleShot(700, lambda: self._continue_interaction_thinking(token))
+
+    def _continue_interaction_thinking(self, token: int):
+        if token != self._interaction_preview_token or not self.is_processing or self.is_listening:
+            return
+        self.set_emotion("<E:thinking>")
+        if self.config.thinking_text_enabled:
+            self.show_thinking_text()
         else:
             self.io.show_status("Thinking...")
 
@@ -253,7 +306,8 @@ class MainWindow(QWidget):
                 
     def switch_thinking_text(self):
         if self.is_listening or not self.is_processing: return
-        self.character.set_emotion("<E:thinking>")
+        if not self.character.live2d_enabled:
+            self.character.set_emotion("<E:thinking>")
         if self.thinking_texts:
             text = random.choice(self.thinking_texts)
             self.io.show_status(text)
@@ -273,6 +327,7 @@ class MainWindow(QWidget):
 
     def set_listening(self, listening: bool, username: str = "User"):
         self.is_listening = listening
+        self.character.set_live2d_activity("listening" if listening else "idle")
         if listening:
 
             self.is_processing = False
@@ -289,7 +344,9 @@ class MainWindow(QWidget):
 
     def set_speaking(self, speaking: bool):
         self.is_speaking = speaking
+        self.character.local_music.duck(speaking)
         if speaking:
+            self.text_display_timer.stop()
             self.cancel_idle_fade()
         else:
             self.schedule_idle_fade()
@@ -306,7 +363,14 @@ class MainWindow(QWidget):
         self.character.set_emotion(emotion_tag)
         self.sync_window_to_sprite()
 
+    def prepare_response(self, emotion: str):
+        """Keep thinking until decoded audio actually starts playing."""
+        self.idle_sprite_timer.stop()
+        self.text_display_timer.stop()
+
     def show_response(self, text: str, emotion: str):
+        self.character.set_live2d_activity("responding")
+        self._interaction_preview_token += 1
         self.is_processing = False 
         self.is_displaying_text = True
         self.thinking_timer.stop()
@@ -314,6 +378,7 @@ class MainWindow(QWidget):
         self.dialogue.show_name(self.config.character_name)
         self.set_emotion(emotion)
         self.io.show_output(text)
+        self.character.start_reply_playback()
 
     def show_response_with_timeout(self, text: str, emotion: str):
         self.is_processing = False
@@ -334,7 +399,14 @@ class MainWindow(QWidget):
         reading_time = max(2.0, len(text) * self.config.text_read_speed * self.config.behavior_text_read_multiplier)
         self.text_display_timer.start(int(reading_time * 1000))
 
+    def _finish_text_display(self):
+        if not self.is_speaking:
+            self.finish_processing()
+
     def finish_processing(self):
+        self.character.cancel_reply()
+        self.character.set_live2d_activity("idle")
+        self._interaction_preview_token += 1
         self.is_processing = False
         self.is_displaying_text = False
         self.is_speaking = False
@@ -348,20 +420,57 @@ class MainWindow(QWidget):
         self.schedule_idle_fade()
         
     def _on_idle_sprite_cycle(self):
-        if not self.is_processing and not self.is_listening and not self.is_speaking:
+        if not self.is_processing and not self.is_listening and not self.is_speaking and not self.is_displaying_text:
             self.character.set_emotion("<E:smile>")
 
     def on_audio_complete(self):
-        QTimer.singleShot(1500, self.finish_processing)
+        self.character.local_music.start_pending()
+        self.text_display_timer.start(1500)
 
     def reset_to_default(self):
         self.finish_processing()
         
-    def sync_window_to_sprite(self):
-        def do_resize():
+    def _default_live2d_scale(self):
+        settings = self.config.pack_manager.get_info("character", {}).get("live2d", {})
+        try:
+            return max(0.5, min(1.0, float(settings.get("scale", 0.75))))
+        except (TypeError, ValueError):
+            return 0.75
+
+    def _resize_content(self):
+        layout = self.layout()
+        if self.character._live2d is not None:
+            # Reserve actual space for dialogue: a WebEngine child must never
+            # share the text/input rectangle, regardless of native stacking.
+            available = self.screen().availableGeometry()
+            dialogue_w = min(max(320, self.config.dialogue_width or 380), available.width() - 24)
+            dialogue_h = min(max(128, self.config.dialogue_height or 144), available.height() // 3)
+            fit_scale = min((available.height() - dialogue_h - 32) / 660,
+                            (available.width() - 24) / 440)
+            self.character.set_scale(min(self.character.get_scale(), fit_scale))
+            self.ui_scale = self.character.get_scale()
+            size = self.character.sizeHint()
+            self.character.setFixedSize(size)
+            self.io.setFixedSize(dialogue_w, dialogue_h)
+            layout.setSpacing(8)
+            if layout.indexOf(self.io) < 0:
+                layout.addWidget(self.io, 0, Qt.AlignmentFlag.AlignCenter)
+            self.setFixedSize(max(size.width(), dialogue_w), size.height() + 8 + dialogue_h)
+        else:
+            # Restore the original sprite layout when changing character packs.
+            if layout.indexOf(self.io) >= 0:
+                layout.removeWidget(self.io)
+            layout.setSpacing(0)
+            for widget in (self.character, self.io):
+                widget.setMinimumSize(0, 0)
+                widget.setMaximumSize(16777215, 16777215)
             self.character.adjustSize()
             self.setFixedSize(self.character.sizeHint())
-        self.keep_bottom_right_anchor(do_resize)
+        layout.activate()
+        self.io.raise_()
+
+    def sync_window_to_sprite(self):
+        self.keep_bottom_right_anchor(self._resize_content)
         self.update_io_geometry()
         self._reinforce_topmost()
         
@@ -370,17 +479,16 @@ class MainWindow(QWidget):
         do_resize_func()
         fr = self.frameGeometry()
         new_tl = br - QPoint(fr.width() - 1, fr.height() - 1)
+        if self.character._live2d is not None:
+            available = self.screen().availableGeometry()
+            new_tl.setX(max(available.left(), min(new_tl.x(), available.right() - fr.width() + 1)))
+            new_tl.setY(max(available.top(), min(new_tl.y(), available.bottom() - fr.height() + 1)))
         self.move(new_tl)
         
     def apply_scale(self, s: float):
-        self.ui_scale = s
-        def resize_task():
-            self.character.set_scale(s)
-            self.character.adjustSize()
-            self.setFixedSize(self.character.sizeHint())
-        self.keep_bottom_right_anchor(resize_task)
-        self.update_io_geometry()
-        self._reinforce_topmost()
+        self.character.set_scale(s)
+        self.ui_scale = self.character.get_scale()
+        self.sync_window_to_sprite()
 
     def _reinforce_topmost(self):
         if self.manual_hidden or self.fullscreen_hidden or not self.isVisible():
@@ -462,7 +570,9 @@ class MainWindow(QWidget):
             self.physics_pause_after_drag = False
             
             img_rect = self.character.image_rect()
-            if img_rect.width() > 0 and img_rect.height() > 0:
+            if self.character._live2d is not None:
+                self.apply_scale(self._default_live2d_scale())
+            elif img_rect.width() > 0 and img_rect.height() > 0:
                 target_w = self.config.sprite_width
                 target_h = self.config.sprite_height
                 scale_w = target_w / (img_rect.width() / self.ui_scale)
@@ -479,6 +589,10 @@ class MainWindow(QWidget):
             traceback.print_exc()
         
     def check_idle_fade_allowed(self) -> bool:
+        if getattr(self.io, "_music_requested", False):
+            return False
+        if getattr(self, "_mouse_gaze", None) and self._mouse_gaze.active:
+            return False
         if self.config.always_show_ui or self.manual_hidden or self.fullscreen_hidden:
             return False
         if self.is_processing or self.is_listening or self.is_speaking or self.is_displaying_text:
@@ -499,6 +613,10 @@ class MainWindow(QWidget):
         return True
 
     def update_io_geometry(self):
+        if self.character._live2d is not None:
+            self.io.set_bounds(self.io.geometry())
+            self.io.raise_()
+            return
         img_rect = self.character.image_rect()
         if img_rect.isEmpty():
             self.io.set_bounds(QRect())
@@ -596,13 +714,18 @@ class MainWindow(QWidget):
         if event.type() == QEvent.Wheel and (on_character or on_overlay):
             we = event 
             mods = we.modifiers()
-            if mods & Qt.KeyboardModifier.AltModifier:
+            if mods & Qt.KeyboardModifier.AltModifier and not mods & Qt.KeyboardModifier.ControlModifier:
                 delta = we.angleDelta().y() or we.angleDelta().x()
                 direction = 1 if delta > 0 else -1 if delta < 0 else 0
                 if direction != 0:
                     s = self.character.get_scale() + direction * 0.05
                     s = max(0.5, min(s, 1.0))
                     self.apply_scale(s)
+                return True
+        if (on_self or on_character) and self.character.live2d_enabled:
+            from resona_desktop_pet.live2d.mouse_gaze import gaze_chord_down
+            if event.type() in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick, QEvent.MouseMove) and gaze_chord_down():
+                self.dragging = self.dragging_started = False
                 return True
         if on_self or on_character:
             if event.type() == QEvent.MouseButtonPress:
@@ -631,6 +754,12 @@ class MainWindow(QWidget):
                         self.dragging_started = True
                     self.move(cur - self.drag_offset)
                     return True
+                if (on_character and event.buttons() == Qt.MouseButton.NoButton
+                        and not self.character.interaction_active):
+                    cursor = (Qt.CursorShape.PointingHandCursor
+                              if self.character.is_head_point(event.position().toPoint())
+                              else Qt.CursorShape.OpenHandCursor)
+                    self.character.setCursor(cursor)
             elif event.type() == QEvent.MouseButtonRelease:
                 if self.dragging:
                     self.dragging = False
@@ -659,7 +788,7 @@ class MainWindow(QWidget):
             self.io.setVisible(False)
             if highlight:
                 self.fade_to(1.0)
-                self.char_opacity.setOpacity(1.0)
+                self.character.set_render_opacity(1.0)
             self.character.setCursor(Qt.CursorShape.ForbiddenCursor)
         else:
             self.io.setVisible(True)
@@ -689,7 +818,7 @@ class MainWindow(QWidget):
             
     def fade_to(self, target: float):
         self.fade_anim.stop()
-        self.fade_anim.setStartValue(self.char_opacity.opacity())
+        self.fade_anim.setStartValue(self.character.render_opacity())
         self.fade_anim.setEndValue(target)
         self.fade_anim.start()
         
@@ -738,6 +867,7 @@ class MainWindow(QWidget):
     def show_context_menu(self):
         menu = QMenu(self)
         menu.addAction("Replay Last Response", self.replay_requested.emit)
+        self.populate_interaction_menu(menu.addMenu("互动"))
         menu.addSeparator()
         settings_action = menu.addAction("Settings", self.settings_requested.emit)
         menu.setStyleSheet("""
@@ -761,7 +891,13 @@ class MainWindow(QWidget):
                 margin: 5px 10px;
             }
         """ )
+        if self.character.live2d_enabled:
+            menu.addAction("歌曲播放器", self.show_music_player)
+            menu.addAction("Live2D 功能测试", self.show_live2d_controls)
+            from resona_desktop_pet.live2d.mouse_gaze import HINT
+            menu.addAction(HINT).setEnabled(False)
         outfit_menu = menu.addMenu("Change Outfit")
+        outfit_menu.setEnabled(not self.character.live2d_enabled)
         self.populate_outfit_menu(outfit_menu)
         pack_menu = menu.addMenu("Change Character Pack")
         self.populate_pack_menu(pack_menu)
@@ -775,6 +911,14 @@ class MainWindow(QWidget):
         hide_action.triggered.connect(self.manual_hide)
         menu.addAction("Close", self.close)
         menu.exec(QCursor.pos())
+
+    def populate_interaction_menu(self, menu: QMenu):
+        sing = menu.addAction("唱歌动作")
+        sing.setEnabled(self.character.live2d_enabled)
+        sing.triggered.connect(lambda: self.character.request_live2d("sing", {"command": "start", "duration_seconds": 16}))
+        stop = menu.addAction("停止唱歌")
+        stop.setEnabled(self.character.live2d_enabled)
+        stop.triggered.connect(lambda: self.character.request_live2d("sing", {"command": "stop"}))
         
     def populate_outfit_menu(self, menu: QMenu):
         outfits = self.character.get_available_outfits()
@@ -958,3 +1102,13 @@ class MainWindow(QWidget):
                 ctypes.windll.shell32.DragFinish(hdrop)
                 return True, 0
         return super().nativeEvent(event_type, message)
+
+    def show_music_player(self):
+        self.io.show_music()
+
+    def show_live2d_controls(self):
+        from resona_desktop_pet.live2d.controls import Live2DControls
+        if not hasattr(self, "_live2d_controls"):
+            self._live2d_controls = Live2DControls(self.character, self)
+        self._live2d_controls.show()
+        self._live2d_controls.raise_()

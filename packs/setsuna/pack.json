@@ -7,25 +7,36 @@
         "author": "User"
     },
     "character": {
-    "name": "小木曾雪菜",
-    "username_default": "主人",
-    "tts_language": "ja",
-    "outfits": [
-        {
-            "id": "setsuna_outfit_00",
-            "path": "assets/sprites/setsuna_outfit_00",
-            "is_default": true
-        },
-        {
-            "id": "setsuna_outfit_01",
-            "path": "assets/sprites/setsuna_outfit_01",
-            "is_default": false
-        }
-    ],
+        "name": "小木曾雪菜",
+        "username_default": "主人",
+        "tts_language": "ja",
+        "outfits": [
+            {
+                "id": "setsuna_outfit_00",
+                "path": "assets/sprites/setsuna_outfit_00",
+                "is_default": true
+            },
+            {
+                "id": "setsuna_outfit_01",
+                "path": "assets/sprites/setsuna_outfit_01",
+                "is_default": false
+            },
+            {
+                "id": "setsuna_outfit_02",
+                "path": "assets/sprites/setsuna_outfit_02",
+                "is_default": false
+            }
+        ],
         "sovits_model": {
             "vits_weights": "models/sovits/setsuna_e8_s712.pth",
             "gpt_weights": "models/sovits/setsuna-e15.ckpt",
             "version": "v2ProPlus"
+        },
+        "live2d": {
+            "enabled": true,
+            "model": "assets/live2d/v081l_b/setsuna_psd2live_v001.model3.json",
+            "prompt": "prompts/character_prompt_live2d_v003.txt",
+            "scale": 0.75
         }
     },
     "logic": {
@@ -34,6 +45,18 @@
             {
                 "id": "default",
                 "path": "prompts/new_prompt.txt"
+            },
+            {
+                "id": "live2d_v001",
+                "path": "prompts/character_prompt_live2d_v001.txt"
+            },
+            {
+                "id": "live2d_v002",
+                "path": "prompts/character_prompt_live2d_v002.txt"
+            },
+            {
+                "id": "live2d_v003",
+                "path": "prompts/character_prompt_live2d_v003.txt"
             }
         ],
         "interaction_configs": {

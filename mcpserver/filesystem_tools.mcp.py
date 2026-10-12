@@ -10,6 +10,7 @@ ROUTING_KEYWORDS = [
     "读取文件", "写入文件", "查看文件", "列出目录", "列出文件",
     "保存文件", "新建文件", "删除文件", "复制文件", "移动文件",
     "查看目录", "读取", "写入", "保存",
+    "记住", "记住这个", "帮我记", "记下来", "记录一下",
 ]
 
 # === 安全配置区 ===
@@ -40,7 +41,12 @@ def _check_extension(path: Path):
         raise ValueError(f"File type modification not allowed: {path.suffix}")
 
 # 4. 写保护文件集合 (绝对禁止通过 filesystem_tools 写入或修改)
-WRITE_PROTECTED = {"SOUL.txt", "auto_keywords.json"}  # auto_keywords.json 由后端自动维护，禁止 LLM 工具写入
+WRITE_PROTECTED = {
+    "SOUL.txt",           # 角色核心人格，禁止 LLM 工具写入
+    "auto_keywords.json", # 由后端自动维护，禁止 LLM 工具写入
+    "triggers.json",      # 触发词配置，禁止 LLM 工具写入
+    "emotions.json",      # 情绪映射配置，禁止 LLM 工具写入
+}
 
 # 5. 读保护文件集合 (包含敏感凭据，禁止模型读取)
 READ_PROTECTED = {"config.cfg", "config.ini", ".env", "secrets.json"}

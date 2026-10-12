@@ -188,6 +188,10 @@ class BehaviorMonitor(QThread):
         except Exception as e:
             logging.error(f"[Behavior] Check failed: {e}")
     def _process_rule_matching(self, now, win, idle, hw, clip, weather, is_startup, m_date=None, m_time=None, clip_changed="", music_title="", music_changed="", mock_uptime=None, mock_battery=None, mock_file_drop=None):
+        # Keep sensor/fullscreen updates running, but do not consume trigger counts.
+        if self.controller.singing_triggers_suppressed:
+            self.dropped_file_cache = None
+            return
         is_debug = self.config.debug_trigger
         is_recovering = (idle < 1.0 and self.last_cycle_idle > 1.0)
         recovery_duration = self.last_cycle_idle if is_recovering else 0.0

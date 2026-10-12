@@ -122,6 +122,7 @@ packs/*/auto_keywords.json
 ffmpeg/
 runtime/
 *.zip
+!extras/*.zip
 *.tar.bz2
 
 # =========================
@@ -245,3 +246,13 @@ android-client/**/*.apk
 android-client/**/*.aab
 android-client/**/*.iml
 android-client/*.keystore
+
+# Local Live2D compatibility runtime
+/runtime_live2d/
+
+# Local-only Live2D / music assets and private notes
+/GPT-SoVITS
+/雪菜歌/
+packs/*/assets/live2d/
+packs/*/prompts/character_prompt_live2d_*.txt
+瘦身与调试方案_给Astra.txt

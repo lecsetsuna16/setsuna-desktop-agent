@@ -21,6 +21,11 @@ class IOOverlay(QWidget):
         self.user_name = "User"
         self.char_name = "Resona"
         self.busy_header: Optional[str] = None
+        self.music_panel = None
+        self.music_view = False
+        self._music_requested = False
+        self._music_output_active = False
+        self._music_suppressed = False
         
 
         self.typing_timer = QTimer(self)
@@ -55,6 +60,59 @@ class IOOverlay(QWidget):
         
         self.to_input()
         
+    def bind_music(self, music):
+        from resona_desktop_pet.live2d.music_bar import MusicPlayerBar
+        self.music_panel = MusicPlayerBar(music, self)
+        self.music_panel.hide()
+        self.music_panel.exit_requested.connect(self.exit_music)
+        music.changed.connect(self.sync_music_view)
+        music.playback_requested.connect(self._on_music_requested)
+
+    def _on_music_requested(self):
+        self._music_requested = True
+        self._music_suppressed = False
+
+    def sync_music_view(self):
+        if self.music_panel is None:
+            return
+        owner = self.parent()
+        busy = any(getattr(owner, key, False) for key in ('is_processing', 'is_speaking', 'is_listening'))
+        if self._music_suppressed:
+            return
+        # Keep the selected view across pause, track changes and natural end.
+        if self.music_panel.music.status()['status'] == 'playing':
+            self._music_requested = True
+        if self._music_requested and not busy and not self._music_output_active:
+            if not self.music_view:
+                self.show_music()
+
+    def show_music(self):
+        if self.music_panel is None:
+            return
+        self._music_suppressed = False
+        self._music_requested = True
+        self._music_output_active = False
+        self.music_view = True
+        self.typing_timer.stop()
+        self.header.hide(); self.edit.hide(); self.body.hide()
+        self.music_panel.setGeometry(self.rect())
+        self.music_panel.show(); self.music_panel.raise_()
+        if hasattr(self.parent(), 'idle_timer'):
+            self.parent().cancel_idle_fade()
+        self.update()
+
+    def exit_music(self):
+        self.music_view = False
+        self._music_requested = False
+        self._music_output_active = False
+        self._music_suppressed = True
+        self.music_panel.hide()
+        self.header.show(); self.body.hide(); self.edit.show(); self.edit.setEnabled(True)
+        owner = self.parent()
+        self.edit.setReadOnly(any(getattr(owner, key, False) for key in ('is_processing', 'is_speaking', 'is_listening')))
+        self.busy_header = None
+        self.update_header_text(); self.layout_children(); self.edit.setFocus(); self.update()
+
     def _on_text_changed(self):
         text = self.edit.toPlainText().strip()
         self.update_header_text()
@@ -100,17 +158,28 @@ class IOOverlay(QWidget):
         self.to_input()
         
     def to_input(self):
+        self._music_output_active = False
         self.typing_timer.stop()
         self.body.setVisible(False)
         self.edit.setEnabled(True)
         self.edit.setVisible(True)
         self.edit.clear()
-        self.edit.setFocus()
+        if self.music_view:
+            self.show_music()
+        else:
+            self.header.show()
+            self.sync_music_view()
+        self.edit.setFocus() if not self.music_view else None
         self.update_header_text()
         self.layout_children()
         self.update()
         
     def to_output(self, text: str, animate: bool = False):
+        self.music_view = False
+        self._music_output_active = True
+        if self.music_panel is not None:
+            self.music_panel.hide()
+        self.header.show()
         self.edit.setEnabled(False)
         self.edit.setVisible(False)
         self.body.setVisible(True)
@@ -136,6 +205,9 @@ class IOOverlay(QWidget):
             self.typing_timer.stop()
         
     def layout_children(self):
+        if self.music_view and self.music_panel is not None:
+            self.music_panel.setGeometry(self.rect())
+            return
         w = self.width()
         h = self.height()
         

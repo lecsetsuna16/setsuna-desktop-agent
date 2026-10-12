@@ -19,6 +19,8 @@ from PIL import ImageGrab
 from litellm import acompletion
 
 from ..config import ConfigManager
+from ..llm_response_utils import structured_reasoning_fallback
+from ..model_routing import select_request_model, should_use_fallback
 from .mcp_manager import MCPManager
 from .skill_manager import skill_manager  # Skill 生态接口（预留）
 
@@ -31,6 +33,7 @@ class LLMResponse:
     thought: str = ""
     raw_response: str = ""
     error: Optional[str] = None
+    skip_tts: bool = False
 
 
 @dataclass
@@ -325,13 +328,15 @@ class LLMBackend:
         arguments = getattr(func, "arguments", None) if func else None
         return call_id, name, arguments
 
-    def _build_system_prompt(self, pack_id: Optional[str] = None) -> str:
+    def _build_system_prompt(self, pack_id: Optional[str] = None, source: str = "desktop") -> str:
         """Build layered system prompt: SOUL → User Profile → Long-term Memory → Daily Logs."""
         # 1. Soul core: prefer SOUL.txt, fallback to configured prompt
         try:
             target_pack_id = pack_id if pack_id else self.config.pack_manager.active_pack_id
             pack_root = self.config.pack_manager.packs_dir / target_pack_id
-            soul_path = pack_root / "prompts" / "SOUL.txt"
+            from ..live2d.protocol import live2d_prompt_path
+            live_prompt = live2d_prompt_path(self.config, pack_id) if source in ("desktop", "physical_interaction", "idle_trigger") else None
+            soul_path = live_prompt or (pack_root / "prompts" / "SOUL.txt")
             base_prompt = soul_path.read_text(encoding="utf-8") if soul_path.exists() else self.config.get_prompt(pack_id=pack_id)
         except Exception:
             base_prompt = self.config.get_prompt(pack_id=pack_id)
@@ -404,7 +409,7 @@ class LLMBackend:
 
     def _build_messages(self, question: str, extra_context: Optional[str] = None, history: Optional[ConversationHistory] = None, pack_id: Optional[str] = None, source: str = "desktop", matched_skills: Optional[list] = None) -> list:
         messages = []
-        system_prompt = self._build_system_prompt(pack_id=pack_id)
+        system_prompt = self._build_system_prompt(pack_id=pack_id, source=source)
 
         context_parts = []
         if self.config.enable_time_context:
@@ -492,7 +497,10 @@ class LLMBackend:
                 _is_deepseek = "deepseek" in _llm_cfg.get("base_url", "").lower()
             except Exception:
                 pass
-        if _is_first_message and _is_deepseek:
+        # Physical UI events already carry a strict structured-output instruction.
+        # Appending the inner-OS marker here makes Flash models put roleplay thoughts
+        # outside the JSON envelope, so keep it for ordinary conversation only.
+        if _is_first_message and _is_deepseek and source != "physical_interaction":
             processed_question = processed_question + _DEEPSEEK_INNER_OS_MARKER
 
         messages.append({"role": "user", "content": processed_question})
@@ -716,6 +724,38 @@ class LLMBackend:
             response.error = f"JSON parsing failed: {str(e)}"
             return response
 
+    def _plain_text_fallback_response(self, text: str, reasoning: str = "") -> LLMResponse:
+        """Keep a malformed chat response visible without feeding Chinese text to Japanese TTS."""
+        clean = (text or "").strip()
+        clean = re.sub(r"^```(?:text)?\s*|\s*```$", "", clean, flags=re.IGNORECASE).strip()
+        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", clean) if part.strip()]
+
+        # DeepSeek occasionally puts an inner monologue in a leading parenthesized block.
+        while len(paragraphs) > 1:
+            first = paragraphs[0]
+            if ((first.startswith("（") and first.endswith("）"))
+                    or (first.startswith("(") and first.endswith(")"))
+                    or first.lower().startswith("<think>")):
+                paragraphs.pop(0)
+            else:
+                break
+
+        display = "\n\n".join(paragraphs).strip() or clean
+        response = LLMResponse(
+            emotion="<E:smile>",
+            text_display=display,
+            text_tts="",
+            thought=reasoning,
+            raw_response=json.dumps({
+                "emotion": "<E:smile>",
+                "text_display": display,
+                "text_tts": "",
+            }, ensure_ascii=False),
+            skip_tts=True,
+        )
+        log("Structured response repair failed; using display-only plain-text fallback")
+        return response
+
     def _log_interaction(self, request_data: Any, response_raw: str):
         import logging
         import copy
@@ -924,7 +964,11 @@ class LLMBackend:
             return
 
         llm_cfg = self.config.get_llm_config()
-        chat_model = llm_cfg.get("chat_model_name", "") or llm_cfg.get("model_name", "")
+        chat_model = (
+            llm_cfg.get("chat_model_name", "")
+            if llm_cfg.get("routing_enabled", False)
+            else ""
+        ) or llm_cfg.get("model_name", "")
         if not chat_model:
             return
 
@@ -987,11 +1031,96 @@ class LLMBackend:
             )
             self._notify_activity()
             if not raw_text:
-                return LLMResponse(error="Empty response from LLM", thought=reasoning)
+                # Some DeepSeek-compatible endpoints occasionally put the complete
+                # structured answer in reasoning_content while leaving content empty.
+                reasoning_candidate = structured_reasoning_fallback(reasoning)
+                if reasoning_candidate:
+                    recovered = self._parse_response(reasoning_candidate)
+                    if not recovered.error:
+                        log("Recovered structured response from reasoning_content")
+                        return recovered
+
+                log("Chat model returned empty content; requesting one structured retry")
+                retry_messages = list(messages)
+                retry_messages.append({
+                    "role": "user",
+                    "content": (
+                        "Return the answer to the preceding request again. Put the final answer in "
+                        "message.content as ONLY valid JSON with thought, emotion, text_display, "
+                        "and text_tts. Do not leave message.content empty."
+                    ),
+                })
+                try:
+                    _, retry_text, retry_reasoning, _ = await self._call_litellm_raw(
+                        retry_messages,
+                        model_name,
+                        model_type,
+                        api_key,
+                        base_url,
+                        tools=None,
+                        tool_choice=None,
+                        temperature=min(temperature, 0.3),
+                        top_p=top_p,
+                        max_tokens=max_tokens,
+                    )
+                    self._notify_activity()
+                    retry_candidate = (retry_text or "").strip()
+                    if not retry_candidate:
+                        retry_candidate = structured_reasoning_fallback(retry_reasoning)
+                    if retry_candidate:
+                        retried_response = self._parse_response(retry_candidate)
+                        retried_response.thought = (
+                            "" if retry_candidate == (retry_reasoning or "").strip()
+                            else retry_reasoning
+                        )
+                        if not retried_response.error:
+                            return retried_response
+                except Exception as retry_error:
+                    log(f"Empty response retry failed: {retry_error}")
+                return LLMResponse(
+                    error="Empty response from LLM after one retry",
+                    thought=reasoning,
+                )
 
             llm_resp = self._parse_response(raw_text)
             llm_resp.thought = reasoning
-            return llm_resp
+            if not llm_resp.error:
+                return llm_resp
+
+            log("Chat response was not valid JSON; requesting one structured repair")
+            repair_messages = list(messages)
+            repair_messages.append({"role": "assistant", "content": raw_text})
+            repair_messages.append({
+                "role": "user",
+                "content": (
+                    "Convert your previous answer to the exact JSON schema required by the system prompt. "
+                    "Return ONLY valid JSON with thought, emotion, text_display, and text_tts; "
+                    "no Markdown or extra text."
+                ),
+            })
+            try:
+                _, repaired_text, repaired_reasoning, _ = await self._call_litellm_raw(
+                    repair_messages,
+                    model_name,
+                    model_type,
+                    api_key,
+                    base_url,
+                    tools=None,
+                    tool_choice=None,
+                    temperature=min(temperature, 0.3),
+                    top_p=top_p,
+                    max_tokens=max_tokens,
+                )
+                self._notify_activity()
+                if repaired_text:
+                    repaired_response = self._parse_response(repaired_text)
+                    repaired_response.thought = repaired_reasoning or reasoning
+                    if not repaired_response.error:
+                        return repaired_response
+            except Exception as repair_error:
+                log(f"Structured response repair request failed: {repair_error}")
+
+            return self._plain_text_fallback_response(raw_text, reasoning)
         except Exception as e:
             self._log_interaction("EXCEPTION", str(e))
             return LLMResponse(error=str(e))
@@ -1126,7 +1255,10 @@ class LLMBackend:
                     else:
                         serializable_tool_calls.append(dict(tc))
 
-                messages.append({"role": "assistant", "content": raw_text or "", "tool_calls": serializable_tool_calls})
+                asst_msg = {"role": "assistant", "content": raw_text or "", "tool_calls": serializable_tool_calls}
+                if reasoning:
+                    asst_msg["reasoning_content"] = reasoning
+                messages.append(asst_msg)
                 for tool_call in tool_calls:
                     call_id, name, arguments = self._normalize_tool_call(tool_call)
                     if not name:
@@ -1174,14 +1306,27 @@ class LLMBackend:
                     return llm_resp
                 if not attempted_retry:
                     attempted_retry = True
-                    messages.append({"role": "assistant", "content": raw_text})
+                    retry_msg = {"role": "assistant", "content": raw_text}
+                    if reasoning:
+                        retry_msg["reasoning_content"] = reasoning
+                    messages.append(retry_msg)
                     messages.append({"role": "user", "content": "Your response is not valid JSON. Please return ONLY valid JSON, no other text."})
                     continue
                 return llm_resp
 
+            reasoning_candidate = structured_reasoning_fallback(reasoning)
+            if reasoning_candidate:
+                recovered = self._parse_response(reasoning_candidate)
+                if not recovered.error:
+                    log("Recovered structured tool-path response from reasoning_content")
+                    return recovered
+
             if not attempted_retry:
                 attempted_retry = True
-                messages.append({"role": "assistant", "content": raw_text or ""})
+                empty_msg = {"role": "assistant", "content": raw_text or ""}
+                if reasoning:
+                    empty_msg["reasoning_content"] = reasoning
+                messages.append(empty_msg)
                 messages.append({"role": "user", "content": "Your response is empty. Please return ONLY valid JSON."})
                 continue
 
@@ -1244,18 +1389,17 @@ class LLMBackend:
         api_key = llm_config["api_key"]
         base_url = llm_config.get("base_url", "")
 
-        # ── 路由逻辑 ──────────────────────────────────────────────────────────
-        # 设计原则：默认走 chat（低延迟），命中工具意图才升级到 reasoner。
+        # ── 可选手动路由逻辑 ──────────────────────────────────────────────────
+        # routing_enabled=false 时，聊天、工具与 Skill 均统一使用 model_name。
+        # routing_enabled=true 时，默认走 chat，命中工具意图才升级到 main。
         # chat 偶尔误判（自己决定调工具）代价 = 多一轮 LLM，稍慢；
         # reasoner 做纯聊天代价 = 思考模式开销，每次多 8s+，体验差。
         #
-        # 路由规则（MCP 启用时）：
+        # 开启后的规则（MCP 启用时）：
         #   - 命中 _TOOL_INTENT → main 模型（reasoner，工具调用更可靠）
         #   - 未命中            → chat 模型（低延迟）
-        # MCP 未启用 → 始终走 chat 模型（工具不可用，reasoner 推理优势无意义）
-        # 未填 chat_model_name → 所有请求走 main 模型，行为与改动前一致。
-        _main_model = llm_config["model_name"]
-        _chat_model = llm_config.get("chat_model_name", "")
+        # MCP 未启用时走 chat；未填 chat_model_name 时仍走 main。
+        _routing_enabled = llm_config.get("routing_enabled", False)
         _mcp_active = (
             self._mcp_manager is not None
             and self._mcp_manager.enabled
@@ -1268,23 +1412,18 @@ class LLMBackend:
         _matched_skills = skill_manager.match(question) if self.config.skills_enabled else []
         _skill_wants_reasoner = skill_manager.requires_reasoner(_matched_skills)
 
-        # ── 工具意图正则（命中 → 一定走 reasoner）────────────────────────────
-        # 使用缓存方法：静态基础正则 + 各 MCP 声明的 ROUTING_KEYWORDS 动态合并
-        # 首次调用时构建并缓存，后续复用（MCPs 运行时不变）
-        _TOOL_INTENT = self._get_tool_intent_re()
+        # 路由关闭时不要构建关键词正则，也不要启动缺失关键词的后台生成任务。
+        _has_tool_intent = False
+        if _routing_enabled:
+            _has_tool_intent = bool(self._get_tool_intent_re().search(question))
 
-        if _chat_model and (not _mcp_active or not _TOOL_INTENT.search(question)) and not _skill_wants_reasoner:
-            model_name = _chat_model
-            if not _mcp_active:
-                log(f"[Router] MCP inactive → chat model: {_chat_model}")
-            else:
-                log(f"[Router] No tool intent → chat model: {_chat_model}")
-        else:
-            model_name = _main_model
-            if _skill_wants_reasoner:
-                log(f"[Router] Skill requires reasoner → main model: {_main_model}")
-            else:
-                log(f"[Router] Tool intent detected → main model: {_main_model}")
+        model_name, _route_reason = select_request_model(
+            llm_config,
+            mcp_active=_mcp_active,
+            has_tool_intent=_has_tool_intent,
+            skill_wants_reasoner=_skill_wants_reasoner,
+        )
+        log(f"[Router] {_route_reason}")
         # ──────────────────────────────────────────────────────────────────────
 
         current_signature = (model_type, model_name, api_key, base_url)
@@ -1343,6 +1482,7 @@ class LLMBackend:
 
             supported_types = {"local", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
             if model_type in supported_types:
+                _flash_rounds = min(max_tool_rounds, 6)
                 if tools:
                     response = await self._query_with_tools(
                         messages,
@@ -1351,7 +1491,7 @@ class LLMBackend:
                         api_key,
                         base_url,
                         tools=tools,
-                        max_tool_rounds=max_tool_rounds,
+                        max_tool_rounds=_flash_rounds,
                         temperature=llm_config.get("temperature", 0.7),
                         top_p=llm_config.get("top_p", 1.0),
                         max_tokens=llm_config.get("max_tokens", 500),
@@ -1371,6 +1511,40 @@ class LLMBackend:
                     )
             else:
                 response = LLMResponse(error=f"Unsupported model type: {model_type}")
+
+            # ── 可选兜底 ──────────────────────────────────────────────────────
+            # 只有显式开启手动路由时，工具调用失败才允许切到 fallback_model。
+            _fallback_model = llm_config.get("fallback_model_name", "")
+            if should_use_fallback(
+                llm_config,
+                has_error=bool(response.error),
+                has_tools=bool(tools),
+                selected_model=model_name,
+            ):
+                log(f"[Router] {model_name} failed ({response.error[:60]}) → pro fallback: {_fallback_model}")
+                try:
+                    if image_base64 and image_capable:
+                        _fb_msgs = self._build_messages_with_image(
+                            question, extra_context or ocr_context, image_base64,
+                            history, pack_id=pack_id, source=source, matched_skills=_matched_skills
+                        )
+                    else:
+                        _fb_msgs = self._build_messages(
+                            question, extra_context or ocr_context,
+                            history, pack_id=pack_id, source=source, matched_skills=_matched_skills
+                        )
+                    response = await self._query_with_tools(
+                        _fb_msgs, _fallback_model, model_type, api_key, base_url,
+                        tools=tools, max_tool_rounds=max_tool_rounds - _flash_rounds,
+                        temperature=llm_config.get("temperature", 0.7),
+                        top_p=llm_config.get("top_p", 1.0),
+                        max_tokens=llm_config.get("max_tokens", 500),
+                        pack_id=pack_id, original_question=question
+                    )
+                except Exception as _fb_e:
+                    log(f"[Router] Pro fallback also failed: {_fb_e}")
+            # ──────────────────────────────────────────────────────────────────
+
         except Exception as e:
             response = LLMResponse(error=f"Request Failed: {e}")
 
@@ -1390,9 +1564,12 @@ class LLMBackend:
     async def query_idle(self, question: str, pack_id: Optional[str] = None) -> LLMResponse:
         llm_config = self.config.get_llm_config()
         model_type = llm_config["model_type"]
-        # Idle triggers are pure chat — use the lightweight chat model if configured
-        # (avoids reasoner's slow thinking mode for simple check-in messages)
-        _chat_model = llm_config.get("chat_model_name", "")
+        # 单模型模式下空闲触发同样使用 model_name；仅显式开启路由时使用 chat。
+        _chat_model = (
+            llm_config.get("chat_model_name", "")
+            if llm_config.get("routing_enabled", False)
+            else ""
+        )
         model_name = _chat_model if _chat_model else llm_config["model_name"]
         api_key = llm_config["api_key"]
         base_url = llm_config.get("base_url", "")

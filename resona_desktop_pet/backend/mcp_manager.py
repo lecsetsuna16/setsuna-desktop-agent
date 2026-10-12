@@ -40,17 +40,19 @@ class MCPManager:
         self._tools_cache_meta: List[Dict[str, Any]] = []
         self._server_has_public: Dict[str, bool] = {}
         self._started = False
+        self._local_tools = {}
         register_cleanup(self.stop_sync)
 
     def has_tools(self) -> bool:
-        return bool(self._tools_cache)
+        return bool(self._tools_cache or self._local_tools)
 
     def get_tools(self, public_only: bool = True) -> List[Dict[str, Any]]:
         if not self.enabled:
             return []
+        combined = self._tools_cache + [entry["definition"] for entry in self._local_tools.values()]
         if not public_only:
-            return list(self._tools_cache)
-        tools = [t for t in self._tools_cache if "[PRIVATE]" not in t.get("function", {}).get("description", "")]
+            return list(combined)
+        tools = [t for t in combined if "[PRIVATE]" not in t.get("function", {}).get("description", "")]
         hide_prefixes = self.config.get("MCP", "hide_public_prefixes", "")
         if hide_prefixes:
             prefixes = [p.strip() for p in hide_prefixes.split(",") if p.strip()]
@@ -59,6 +61,8 @@ class MCPManager:
         return tools
 
     def get_tool_metadata(self, name: str) -> Dict[str, Any]:
+        if name in self._local_tools:
+            return {"server": "live2d.local", "public": True, "subagent": False}
         return self._tool_index.get(name, {})
 
     # ── Auto-generated routing keywords cache ───────────────────────────────
@@ -324,7 +328,15 @@ class MCPManager:
             return
         loop.create_task(self.stop())
 
+    def register_local_tool(self, definition, handler):
+        name = definition["function"]["name"]
+        if name in self._tool_index:
+            raise ValueError(f"Local tool conflicts with MCP server: {name}")
+        self._local_tools[name] = {"definition": definition, "handler": handler}
+
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
+        if name in self._local_tools:
+            return await self._local_tools[name]["handler"](arguments)
         entry = self._tool_index.get(name)
         if not entry:
             raise RuntimeError(f"MCP tool not found: {name}")
