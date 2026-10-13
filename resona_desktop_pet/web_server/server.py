@@ -1,4 +1,5 @@
 from fastapi import FastAPI, WebSocket, Request, UploadFile, File, Form
+from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +16,21 @@ from typing import Optional
 from .session_manager import SessionManager
 from resona_desktop_pet.utils.audio_utils import convert_to_wav
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app):
+    async def prune_sessions():
+        while True:
+            await asyncio.sleep(30)
+            if controller_ref:
+                session_manager.cleanup_inactive(controller_ref.config.html_session_timeout)
+    task = asyncio.create_task(prune_sessions())
+    try:
+        yield
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -168,10 +183,10 @@ def set_controller(controller, loop):
     controller_ref = controller
     main_loop = loop
 
-def start_udp_beacon(http_port: int):
+def start_udp_beacon(http_port: int, stop_event: threading.Event):
     def run():
         payload = json.dumps({"type": "resona_server", "port": http_port}).encode("utf-8")
-        while True:
+        while not stop_event.is_set():
             try:
                 import socket
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -180,7 +195,7 @@ def start_udp_beacon(http_port: int):
                 s.close()
             except Exception:
                 pass
-            time.sleep(2.0)
+            stop_event.wait(2.0)
     threading.Thread(target=run, daemon=True).start()
 
 @app.websocket("/ws")
@@ -188,6 +203,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     client_id = str(websocket.client.host)
     
+    session = None
     try:
         init_data = await websocket.receive_json()
         pack_id = init_data.get("pack_id", "default")
@@ -306,7 +322,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         pass
     finally:
-        if session:
+        if session and session.websocket is websocket:
             session.websocket = None
 
 @app.post("/upload_audio")
@@ -367,6 +383,8 @@ async def upload_audio(
 
 @app.get("/")
 async def get_index():
+    if controller_ref and not controller_ref.config.html_webpage_enabled:
+        return JSONResponse({"error": "Web page disabled"}, status_code=404)
     if controller_ref:
         static_path = resolve_static_path(controller_ref, controller_ref.config.html_static_dir)
         index_path = static_path / "index.html"
@@ -430,13 +448,25 @@ class WebServerThread(threading.Thread):
         self.port = port
         self.static_dir = static_dir
         self.daemon = True
+        self.stop_event = threading.Event()
+        self.server = None
+        from resona_desktop_pet.cleanup_manager import register_cleanup
+        register_cleanup(self.stop)
+
+    def stop(self):
+        self.stop_event.set()
+        if self.server is not None:
+            self.server.should_exit = True
+        if self.is_alive() and threading.current_thread() is not self:
+            self.join(timeout=3)
 
     def run(self):
         set_controller(self.controller, self.loop)
         
         static_path = resolve_static_path(self.controller, self.static_dir)
         print(f"[Web] Static path: {static_path}")
-        start_udp_beacon(self.port)
+        if self.controller.config.html_udp_beacon_enabled:
+            start_udp_beacon(self.port, self.stop_event)
         
         try:
             import socket
@@ -455,11 +485,14 @@ class WebServerThread(threading.Thread):
         temp_path.mkdir(parents=True, exist_ok=True)
         app.mount("/temp", StaticFiles(directory=str(temp_path)), name="temp")
 
-        app.mount("/static", StaticFiles(directory=str(static_path), html=True), name="static")
+        if self.controller.config.html_webpage_enabled:
+            app.mount("/static", StaticFiles(directory=str(static_path), html=True), name="static")
 
         config = uvicorn.Config(app, host=self.host, port=self.port, log_level="error", log_config=None)
-        server = uvicorn.Server(config)
-        server.run()
+        self.server = uvicorn.Server(config)
+        if not self.stop_event.is_set():
+            self.server.run()
+        self.stop_event.set()
 
 class ExternalWSServerThread(threading.Thread):
     def __init__(self, controller, loop, host, port):

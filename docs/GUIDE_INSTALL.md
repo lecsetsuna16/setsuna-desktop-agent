@@ -76,7 +76,7 @@ api_key = sk-你的key填这里
 下载安装：https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 **Q：Python 版本不对？**  
-本项目支持 Python 3.10–3.13，3.14 及以上不支持。如无 Python 或版本不对，setup.ps1 选模式 `3` 会自动下载内置运行时（Python 3.10）。
+本项目支持 Python 3.10–3.14（推荐 3.12）。如无 Python 或版本不对，setup.ps1 选模式 `3` 会自动下载内置运行时（Python 3.12）。
 
 **Q：config.cfg 在哪里？**  
 第一次运行 setup.ps1 后会自动从 `config.example.cfg` 复制生成。如果没有，手动复制一份改名即可。

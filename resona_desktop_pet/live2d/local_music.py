@@ -56,7 +56,8 @@ class LocalMusic(QObject):
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self.refresh)
         self._rescan = QTimer(self)
-        self._rescan.setInterval(3000)
+        # QFileSystemWatcher handles edits immediately; this only repairs missed events.
+        self._rescan.setInterval(60000)
         self._rescan.timeout.connect(self.refresh)
         self._rescan.start()
         QTimer.singleShot(0, self.refresh)

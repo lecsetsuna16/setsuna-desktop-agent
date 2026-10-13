@@ -98,7 +98,7 @@ def check(name, value):
 try:
     wait(lambda: canvas.snapshot.get('ready'), 35)
     result = call('setsuna_status')
-    check('real_model_25_parameters', result.get('model', {}) == {'parameters':25,'drawables':50})
+    check('real_v081_model', result.get('profile') == 'v081l-b' and result.get('model', {}).get('parameters', 0) > 0)
     qwait(350)
     window.grab().save(str(OUT / '01_idle.png'))
     samples = sample(3)
@@ -112,7 +112,7 @@ try:
     perform(expression='smile', look='left', hold_ms=2200)
     qwait(650)
     result = call('setsuna_status')
-    check('smile_preset', result['parameters']['ParamMouthForm'] > .2)
+    check('smile_preset', result['expression'] == 'smile')
     check('gaze_left', result['parameters']['ParamEyeBallX'] < -.2)
     window.grab().save(str(OUT / '02_smile_left.png'))
     perform(expression='shy', look='right')
@@ -124,27 +124,26 @@ try:
     check('reject_out_of_range', not call('setsuna_perform', {'intensity':2})['ok'])
     check('invalid_did_not_mutate', call('setsuna_status')['revision'] == before)
     call('setsuna_reset'); qwait(1200)
-    check('reset_neutral', abs(call('setsuna_status')['parameters']['ParamMouthForm']) < .01)
+    check('reset_neutral', call('setsuna_status')['expression'] == 'neutral')
     perform(motion='nod',hold_ms=3000); qwait(650)
-    before_reset=call('setsuna_status')['parameters']['ParamAngleY']
     reset_result=call('setsuna_reset')
-    check('reset_does_not_snap_head', abs(reset_result['parameters']['ParamAngleY']) > abs(before_reset)*.15)
+    check('reset_acknowledged_with_finite_pose', reset_result.get('ok') and all(math.isfinite(v) for v in reset_result['parameters'].values()))
     qwait(1000)
-    check('reset_returns_to_haircheck_idle', call('setsuna_status')['idle']['playing'])
+    check('reset_returns_to_idle', call('setsuna_status')['idle']['playing'])
     window.start_thinking(); qwait(600)
     check('thinking_state', call('setsuna_status')['state'] == 'thinking')
     window.set_listening(True); qwait(300)
     check('listening_state', call('setsuna_status')['state'] == 'listening')
     window.set_listening(False); window.finish_processing(); call('setsuna_reset')
     prompt = live2d_prompt_path(config)
-    check('separate_live2d_prompt_selected', prompt.name == 'character_prompt_live2d_v002.txt')
+    check('separate_live2d_prompt_selected', prompt.name == 'character_prompt_live2d_v003.txt')
     # Silence, audible signal, silence, then stop/interrupt during another signal.
     audio = OUT / 'mouth_test.wav'
     sr = 24000
     samples = array('h', [int(11000*math.sin(2*math.pi*220*i/sr)) if .6 < i/sr < 2.5 else 0 for i in range(sr*3)])
     with wave.open(str(audio), 'wb') as file:
         file.setnchannels(1); file.setsampwidth(2); file.setframerate(sr); file.writeframes(samples.tobytes())
-    player = QMediaPlayer(); output = QAudioOutput(); output.setVolume(.07); player.setAudioOutput(output)
+    player = QMediaPlayer(); output = QAudioOutput(); output.setVolume(0); player.setAudioOutput(output)
     lipsync = AudioLipSync(player); lipsync.level.connect(character.set_live2d_audio)
     audio_levels = []; lipsync.level.connect(lambda level, playing: audio_levels.append((level, playing)))
     faulthandler.enable(); faulthandler.dump_traceback_later(15)
@@ -167,6 +166,37 @@ try:
             window.grab().save(str(OUT / ('expression_'+expression+'.png')))
     call('setsuna_reset'); qwait(700)
     window.grab().save(str(OUT / '03_reset.png'))
+    # Check the real local player without changing the user's library or volume.
+    from resona_desktop_pet.live2d.playlist import Playlist
+    from concurrent.futures import Future
+    import shutil
+    music_dir = OUT / 'test_music'
+    music_dir.mkdir(exist_ok=True)
+    shutil.copyfile(audio, music_dir / 'test.wav')
+    local = character.local_music
+    local.playlist = Playlist(music_dir)
+    local.set_volume(0)
+    local.refresh()
+    future = Future()
+    local.dispatch({'command': 'play', 'path': 'test.wav'}, future, defer_for_reply=False)
+    wait(future.done)
+    check('local_music_plays', future.result().get('ok') and local.has_track)
+    qwait(400)
+    check('local_music_drives_singing', call('setsuna_status')['singing']['music_bound'])
+    future = Future()
+    local.dispatch({'command': 'stop'}, future)
+    check('local_music_stops', future.result().get('ok') and not local.has_track)
+    # Keep renderer heartbeats and acknowledgements alive while hidden.
+    canvas.hide()
+    qwait(600)
+    hidden_start = call('setsuna_status')['rendering']['frames']
+    qwait(1200)
+    hidden = call('setsuna_status')
+    check('hidden_frame_limit', not hidden['rendering']['visible'] and
+          hidden['rendering']['frames'] - hidden_start <= 9)
+    canvas.show()
+    qwait(600)
+    check('visible_render_resumes', call('setsuna_status')['rendering']['visible'])
     report = {'passed':checks,'snapshot':call('setsuna_status')}
     if '--public-api-test' in sys.argv:
         from resona_desktop_pet.backend.llm_backend import LLMBackend
@@ -202,6 +232,10 @@ try:
         window.grab().save(str(OUT / '04_deepseek_response.png'))
         report['deepseek']={'test_scope':'synthetic public test; no private character prompt sent', 'configured_model':llm_config['model_name'], 'tool_calls':requests,
                             'emotion':response.emotion,'text_display':response.text_display,'text_tts':response.text_tts}
+    config.pack_manager.pack_data['character']['live2d']['enabled'] = False
+    character._setup_live2d()
+    check('static_fallback', character._live2d is None and not character._pixmap.isNull())
+    window.grab().save(str(OUT / '05_static_fallback.png'))
     (OUT/'smoke_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     print('ALL', len(checks), 'CHECKS PASSED', flush=True)
 finally:

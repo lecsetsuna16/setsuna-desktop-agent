@@ -20,7 +20,6 @@ class MainWindow(QWidget):
     pack_changed = Signal(str)
     settings_requested = Signal()
     file_dropped = Signal(dict)
-    physical_interaction = Signal(str)
     def __init__(self, config: ConfigManager, parent: QWidget = None):
         super().__init__(parent)
         self.config = config
@@ -54,6 +53,7 @@ class MainWindow(QWidget):
         self.is_displaying_text = False
         self.fade_hover_recovery_sec = 0.0
         self._pack_change_handler_connected = False
+        self._recent_drops = {}
         self.project_root = Path(self.config.config_path).parent
         
         self.setObjectName("MainRoot")
@@ -127,7 +127,6 @@ class MainWindow(QWidget):
         self.thinking_timer.timeout.connect(self.show_thinking_text)
         self.thinking_switch_timer = QTimer(self)
         self.thinking_switch_timer.timeout.connect(self.switch_thinking_text)
-        self._interaction_preview_token = 0
         self.text_display_timer = QTimer(self)
         self.text_display_timer.setSingleShot(True)
         self.text_display_timer.timeout.connect(self._finish_text_display)
@@ -139,7 +138,6 @@ class MainWindow(QWidget):
         self.io.text_changed.connect(self.on_input_text_changed)
         self.io.file_dropped.connect(self.on_file_dropped)
         self.character.rightClicked.connect(self.show_context_menu)
-        self.character.physicalInteraction.connect(self.physical_interaction.emit)
         
         QTimer.singleShot(0, self.sync_window_to_sprite)
         self.dialogue = self.DialogueAdapter(self)
@@ -236,7 +234,6 @@ class MainWindow(QWidget):
         self.text_display_timer.stop()
         self.character.begin_reply()
         self.character.set_live2d_activity("thinking")
-        self._interaction_preview_token += 1
         self.is_processing = True
         self.idle_sprite_timer.stop()
         self.cancel_idle_fade()
@@ -254,40 +251,6 @@ class MainWindow(QWidget):
         else:
             self.io.show_status("Thinking...")
 
-    def start_interaction_thinking(self, interaction: str):
-        """Show an immediate local reaction while the LLM works in parallel."""
-        if self.is_listening:
-            return
-        previews = {
-            "head_pat": ("嗯……？", "<E:shy>"),
-            "cheek_poke": ("呀！", "<E:surprised>"),
-            "hug": ("……！", "<E:shy>"),
-            "shoulder_pat": ("嗯。", "<E:smile>"),
-        }
-        preview_text, preview_emotion = previews.get(
-            interaction, ("嗯？", "<E:surprised>")
-        )
-        self._interaction_preview_token += 1
-        token = self._interaction_preview_token
-        self.is_processing = True
-        self.idle_sprite_timer.stop()
-        self.thinking_timer.stop()
-        self.thinking_switch_timer.stop()
-        self.cancel_idle_fade()
-        self.set_emotion(preview_emotion)
-        self.dialogue.show_name(self.config.character_name)
-        self.set_input_locked(True, "Thinking...")
-        self.io.show_status(preview_text)
-        QTimer.singleShot(700, lambda: self._continue_interaction_thinking(token))
-
-    def _continue_interaction_thinking(self, token: int):
-        if token != self._interaction_preview_token or not self.is_processing or self.is_listening:
-            return
-        self.set_emotion("<E:thinking>")
-        if self.config.thinking_text_enabled:
-            self.show_thinking_text()
-        else:
-            self.io.show_status("Thinking...")
 
     def on_query_submitted(self, text: str):
         if self.is_listening: return
@@ -370,7 +333,6 @@ class MainWindow(QWidget):
 
     def show_response(self, text: str, emotion: str):
         self.character.set_live2d_activity("responding")
-        self._interaction_preview_token += 1
         self.is_processing = False 
         self.is_displaying_text = True
         self.thinking_timer.stop()
@@ -380,16 +342,6 @@ class MainWindow(QWidget):
         self.io.show_output(text)
         self.character.start_reply_playback()
 
-    def show_response_with_timeout(self, text: str, emotion: str):
-        self.is_processing = False
-        self.is_displaying_text = True
-        self.thinking_timer.stop()
-        self.thinking_switch_timer.stop()
-        self.cancel_idle_fade()
-        self.show_response(text, emotion)
-        reading_time = self.config.base_display_time + (len(text) * self.config.text_read_speed)
-        reading_time = max(1.5, reading_time)
-        self.text_display_timer.start(int(reading_time * 1000))
 
     def show_behavior_response_with_timeout(self, text: str, emotion: str):
         self.is_processing = False
@@ -406,7 +358,6 @@ class MainWindow(QWidget):
     def finish_processing(self):
         self.character.cancel_reply()
         self.character.set_live2d_activity("idle")
-        self._interaction_preview_token += 1
         self.is_processing = False
         self.is_displaying_text = False
         self.is_speaking = False
@@ -541,11 +492,6 @@ class MainWindow(QWidget):
             else:
                 self.topmost_timer.stop()
 
-    def _reapply_drag_drop(self):
-        self.setAcceptDrops(True)
-        self.setAttribute(Qt.WidgetAttribute.WA_DropSiteRegistered, True)
-        self.character.setAcceptDrops(True)
-        self.io.setAcceptDrops(True)
 
     def refresh_from_config(self):
         try:
@@ -754,8 +700,7 @@ class MainWindow(QWidget):
                         self.dragging_started = True
                     self.move(cur - self.drag_offset)
                     return True
-                if (on_character and event.buttons() == Qt.MouseButton.NoButton
-                        and not self.character.interaction_active):
+                if on_character and event.buttons() == Qt.MouseButton.NoButton:
                     cursor = (Qt.CursorShape.PointingHandCursor
                               if self.character.is_head_point(event.position().toPoint())
                               else Qt.CursorShape.OpenHandCursor)
@@ -839,12 +784,6 @@ class MainWindow(QWidget):
         self.cancel_idle_fade()
         self._apply_window_settings()
 
-    def _reset_stays_on_top(self):
-        if not self.manual_hidden and not self.config.always_on_top:
-            current_flags = self.windowFlags()
-            if current_flags & Qt.WindowType.WindowStaysOnTopHint:
-                self.setWindowFlags(current_flags & ~Qt.WindowType.WindowStaysOnTopHint)
-                self.show()
 
     def _update_visibility(self):
         controller = getattr(self, "controller", None)
@@ -1042,12 +981,23 @@ class MainWindow(QWidget):
                             "stem": path.stem,
                             "ext": path.suffix.lower() if path.suffix else ""
                         }
-                        self.file_dropped.emit(file_info)
+                        self.on_file_dropped(file_info)
                         print(f"[UI] File dropped: {file_info}")
             event.acceptProposedAction()
 
     def on_file_dropped(self, file_info: dict):
-        self.file_dropped.emit(file_info)
+        # Qt child widgets and WM_DROPFILES may report the same native gesture.
+        path = Path(file_info.get("path", "")).resolve()
+        if not path.is_file():
+            return
+        key = os.path.normcase(str(path))
+        now = time.monotonic()
+        self._recent_drops = {k: t for k, t in self._recent_drops.items() if now - t < 0.3}
+        if key in self._recent_drops:
+            return
+        self._recent_drops[key] = now
+        self.file_dropped.emit({"path": str(path), "name": path.name,
+                                "stem": path.stem, "ext": path.suffix.lower()})
 
     def showEvent(self, event):
         super().showEvent(event)

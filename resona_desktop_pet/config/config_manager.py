@@ -679,6 +679,30 @@ class ConfigManager:
         return self.getboolean("HTML", "enabled", False)
 
     @property
+    def html_webpage_enabled(self) -> bool:
+        return self.getboolean("HTML", "webpage_enabled", True)
+
+    @property
+    def html_udp_beacon_enabled(self) -> bool:
+        return self.getboolean("HTML", "udp_beacon_enabled", False)
+
+    @property
+    def live2d_fps(self) -> int:
+        return max(15, min(60, self.getint("Live2D", "fps", 30)))
+
+    @property
+    def live2d_hidden_fps(self) -> int:
+        return max(1, min(15, self.getint("Live2D", "hidden_fps", 5)))
+
+    @property
+    def hardware_poll_interval(self) -> float:
+        return max(0.5, self.getfloat("Behavior", "hardware_interval", 2.0))
+
+    @property
+    def process_poll_interval(self) -> float:
+        return max(0.5, self.getfloat("Behavior", "process_interval", 2.0))
+
+    @property
     def html_host(self) -> str:
         return self.get("HTML", "host", "0.0.0.0")
 

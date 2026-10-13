@@ -8,6 +8,7 @@ import {CubismExpressionMotionManager} from '@framework/motion/cubismexpressionm
 import {createEmotionController} from './emotion-controller.js';
 import {createThoughtController} from './thought-controller.js';
 import {createFrameDriver} from './frame-driver.js';
+import {createFrameLimiter} from './frame-limiter.js';
 import {createSingingController} from './singing-controller.js';
 
 class PetModel extends CubismUserModel {
@@ -18,21 +19,27 @@ class PetModel extends CubismUserModel {
   }
 }
 const w:any=window, canvas=document.querySelector<HTMLCanvasElement>('#model')!;
+const query=new URLSearchParams(location.search);
+const frameLimit=createFrameLimiter(Number(query.get('fps')),Number(query.get('hidden_fps')));
+let renderVisible=true, renderedFrames=0;
+let animationHandle:number|null=null, timerHandle:any=null;
 const looks:Record<string,number[]>={center:[0,0],left:[-.55,0],right:[.55,0],up:[0,.4],down:[0,-.4]};
 let user:PetModel, gl:WebGLRenderingContext, bridge:any, emotion:any, thought:any, singer:any, advance:any;
 let params:any[]=[], contract:any, bounds:any, physicsOutputs:string[]=[], resetPhysics=true;
+const paramById=new Map<string,any>();
 let ready=false, baseEmotion='neutral', state='idle', ordinaryTime=0, revision=0, opacity=1;
 let replySelected=false, singReplyBound=false, musicActive=false;
 let action:any=null, lastAction:any=null, pending:any[]=[], singPose:Record<string,number>={};
 let last=performance.now(), lastReport=0, audioAt=0, audioLevel=0, speaking=false, mouth=0;
 let manual={active:false,x:0,y:0,at:0}, manualWeight=0, gestureWeight=0, gestureTarget=[0,0];
 let capabilities:any={expressions:[], motions:['none','nod','shake','blink'], looks:Object.keys(looks), actions:['sing'], unsupported:['head_pat','cheek_poke','hug','shoulder_pat','wave']};
-const get=(id:string)=>{const p=params.find(p=>p.id===id);return p?user.getModel().getParameterValueByIndex(p.index):0};
-const set=(id:string,v:number)=>{const p=params.find(p=>p.id===id);if(p)user.getModel().setParameterValueByIndex(p.index,Math.max(p.min,Math.min(p.max,v)))};
+const get=(id:string)=>{const p=paramById.get(id);return p?user.getModel().getParameterValueByIndex(p.index):0};
+const set=(id:string,v:number)=>{const p=paramById.get(id);if(p)user.getModel().setParameterValueByIndex(p.index,Math.max(p.min,Math.min(p.max,v)))};
 const capture=()=>Object.fromEntries(params.map(p=>[p.id,get(p.id)]));
 const busy=()=>singer&&singer.state!=='idle';
 function report(){return {
   ok:ready, ready, revision, state, speaking, opacity, profile:contract?.version, capabilities,
+  rendering:{fps_limit:frameLimit.fps,hidden_fps:frameLimit.hiddenFps,visible:renderVisible&&!document.hidden,frames:renderedFrames},
   expression:emotion?.name, expression_owner:replySelected?"reply":state==='thinking'?"thinking":"base", action:action?{...action,status:'running'}:lastAction,
   singing:singer?{...singer.status,active:busy(),music_bound:musicActive,reply_bound:singReplyBound,audio_provided:false,queue_policy:'reject'}:null,
   thought:thought?.state, eye_transition:emotion?.eyeTransitionState,
@@ -44,6 +51,7 @@ function command(c:any){
   try {
     if(!ready)throw Error('Renderer not ready');
     const p=c.payload||{};
+    if(c.type==='visibility'){renderVisible=p.visible!==false;scheduleFrame();return;}
     if(c.type==='status'){pending.push({id:c.id,status:'observed'});return;}
     if(c.type==='opacity'){
       if(!Number.isFinite(p.value)||p.value<0||p.value>1)throw Error('Invalid opacity');
@@ -146,8 +154,16 @@ function updateMotion(dt:number){
 }
 async function buffer(url:string){const r=await fetch(url);if(!r.ok)throw Error(`${r.status} ${url}`);return r.arrayBuffer();}
 function fail(e:any){ready=false;document.querySelector('#error')!.textContent='Live2D: '+String(e);bridge?.report(JSON.stringify({ok:false,ready:false,error:String(e)}));}
+function scheduleFrame(){
+  if(!ready)return;
+  if(animationHandle!==null){cancelAnimationFrame(animationHandle);animationHandle=null;}
+  if(timerHandle!==null){clearTimeout(timerHandle);timerHandle=null;}
+  if(renderVisible&&!document.hidden)animationHandle=requestAnimationFrame(frame);
+  else timerHandle=setTimeout(()=>frame(performance.now()),1000/frameLimit.hiddenFps);
+}
 function frame(now:number){
   try{
+    if(!frameLimit.due(now,renderVisible&&!document.hidden)){scheduleFrame();return;}
     advance(Math.max(0,(now-last)/1000));last=now;
     const m=user.getModel();m.update();
     const ratio=Math.min(devicePixelRatio,2),width=Math.max(1,Math.round(canvas.clientWidth*ratio)),height=Math.max(1,Math.round(canvas.clientHeight*ratio));
@@ -159,11 +175,12 @@ function frame(now:number){
     const renderer=user.getRenderer();renderer.setMvpMatrix(mat);
     gl.viewport(0,0,width,height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);
     renderer.setRenderState(null,[0,0,width,height]);renderer.drawModel();
+    renderedFrames++;
     if(gl.getError()!==gl.NO_ERROR)throw Error('WebGL draw error');
     w.live2dSnapshot=report();
     for(const ack of pending.splice(0))bridge?.ack(JSON.stringify({...ack,...w.live2dSnapshot,ok:true}));
     if(now-lastReport>250){lastReport=now;bridge?.report(JSON.stringify(w.live2dSnapshot));}
-    requestAnimationFrame(frame);
+    scheduleFrame();
   }catch(e){fail(e);}
 }
 async function main(){
@@ -176,6 +193,7 @@ async function main(){
   user=new PetModel();user.loadModel(await buffer(resource(settings.FileReferences.Moc)),true);
   const m=user.getModel();
   for(let i=0;i<m.getParameterCount();i++)params.push({index:i,id:m.getParameterId(i).getString(),default:m.getParameterDefaultValue(i),min:m.getParameterMinimumValue(i),max:m.getParameterMaximumValue(i)});
+  for(const p of params)paramById.set(p.id,p);
   m.update();let xmin=Infinity,xmax=-Infinity,ymin=Infinity,ymax=-Infinity;
   for(let i=0;i<m.getDrawableCount();i++){if(m.getDrawableOpacity(i)<.01)continue;const v=m.getDrawableVertices(i);for(let j=0;j<v.length;j+=2){xmin=Math.min(xmin,v[j]);xmax=Math.max(xmax,v[j]);ymin=Math.min(ymin,v[j+1]);ymax=Math.max(ymax,v[j+1]);}}
   bounds={x:(xmin+xmax)/2,y:(ymin+ymax)/2,width:xmax-xmin,height:ymax-ymin};
@@ -200,7 +218,8 @@ async function main(){
   singer=createSingingController({model:m,manager:new CubismMotionManager(),contract:singContract,motionData,getId:(id:string)=>CubismFramework.getIdManager().getId(id),createMotion:(doc:any)=>{const data=new TextEncoder().encode(JSON.stringify(doc));return CubismMotion.create(data.buffer,data.byteLength,undefined,undefined,true);}});
   advance=createFrameDriver({resetBase:()=>{for(const p of params)m.setParameterValueByIndex(p.index,p.default);},updateMotion,
     stabilizePhysics:()=>{resetPhysics=true;},updatePhysics:(dt:number)=>{user.physics(dt,resetPhysics);resetPhysics=false;for(const id of physicsOutputs){const limit=id==='ParamEyeBallForm'||id==='ParamTearSway'?1:.6;set(id,Math.max(-limit,Math.min(limit,get(id))));}}});
-  ready=true;w.live2d={command,snapshot:report};w.live2dSnapshot=report();bridge?.report(JSON.stringify(report()));last=performance.now();requestAnimationFrame(frame);
+  ready=true;w.live2d={command,snapshot:report};w.live2dSnapshot=report();bridge?.report(JSON.stringify(report()));last=performance.now();scheduleFrame();
 }
+document.addEventListener('visibilitychange',scheduleFrame);
 canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();fail('WebGL context lost; reload required');});
 main().catch(fail);

@@ -38,12 +38,13 @@ class SessionManager:
 
     def cleanup_inactive(self, timeout: int):
         now = time.time()
-        expired = [sid for sid, s in self.sessions.items() if now - s.last_active > timeout]
+        expired = [sid for sid, s in self.sessions.items()
+                   if s.websocket is None and now - s.last_active > timeout]
         for sid in expired:
             del self.sessions[sid]
 
     async def broadcast_to_pack(self, pack_id: str, message: dict):
-        for session in self.sessions.values():
+        for session in list(self.sessions.values()):
             if session.pack_id == pack_id and session.websocket:
                 try:
                     await session.websocket.send_json(message)
@@ -51,7 +52,7 @@ class SessionManager:
                     pass
 
     async def broadcast_all(self, message: dict):
-        for session in self.sessions.values():
+        for session in list(self.sessions.values()):
             if session.websocket:
                 try:
                     await session.websocket.send_json(message)

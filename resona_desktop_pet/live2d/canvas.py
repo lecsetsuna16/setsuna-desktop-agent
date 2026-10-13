@@ -29,11 +29,13 @@ class PetBridge(QObject):
                     if not future.done():
                         future.set_result(self.canvas.snapshot)
                 self.canvas.pending.clear()
+                self.canvas.failed.emit(self.canvas.snapshot["error"])
             if self.canvas.snapshot.get("ready") and not self.canvas.initialized:
                 self.canvas.initialized = True
                 self.canvas.send("opacity", {"value": self.canvas.model_opacity})
                 self.canvas.send("emotion", {"emotion": self.canvas.emotion})
                 self.canvas.send("state", {"state": self.canvas.activity})
+                self.canvas.send("visibility", {"visible": self.canvas.isVisible()})
         except (ValueError, TypeError):
             pass
 
@@ -46,7 +48,11 @@ class PetBridge(QObject):
 
 
 class Live2DCanvas(QWebEngineView):
-    def __init__(self, model_path, parent=None):
+    failed = Signal(str)
+
+    def __init__(self, model_path, parent=None, fps=30, hidden_fps=5):
+        if not (Path(model_path).parent / "emotion-contract.json").is_file():
+            raise ValueError("Live2D model requires emotion-contract.json (v081 renderer)")
         super().__init__(parent)
         self.snapshot = {"ok": False, "ready": False, "error": "Model is loading"}
         self.observed_at = 0.0
@@ -67,13 +73,21 @@ class Live2DCanvas(QWebEngineView):
         self.channel.registerObject("petBridge", self.bridge)
         self.page().setWebChannel(self.channel)
         self.server = AssetServer(Path(__file__).parent / "web", Path(model_path).parent)
-        renderer = "v081" if (Path(model_path).parent / "emotion-contract.json").is_file() else "legacy"
-        self.setUrl(QUrl(self.server.url + "?model=" + quote(Path(model_path).name) + "&renderer=" + renderer))
+        self.setUrl(QUrl(self.server.url + "?model=" + quote(Path(model_path).name)
+                         + f"&fps={max(15, min(60, fps))}&hidden_fps={max(1, min(15, hidden_fps))}"))
         self._watchdog = QTimer(self)
         self._watchdog.setInterval(1000)
         self._watchdog.timeout.connect(self._expire)
         self._watchdog.start()
         QApplication.instance().aboutToQuit.connect(self.dispose)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.send("visibility", {"visible": True})
+
+    def hideEvent(self, event):
+        self.send("visibility", {"visible": False})
+        super().hideEvent(event)
 
     def _expire(self):
         for key, future in list(self.pending.items()):
@@ -81,7 +95,7 @@ class Live2DCanvas(QWebEngineView):
                 self.pending.pop(key, None)
 
     def send(self, kind, payload=None, future=None):
-        if self.disposed or not self.snapshot.get("ready") or time.monotonic() - self.observed_at > 3:
+        if self.disposed or not self.snapshot.get("ready") or (kind != "visibility" and time.monotonic() - self.observed_at > 3):
             if future is not None and not future.done():
                 future.set_result({"ok": False, "error": self.snapshot.get("error", "Renderer is not responding"), "ready": False})
             return

@@ -41,7 +41,7 @@ D:\GitHub\Resona-Desktop-Pet\
 ## 4. 后端服务解耦
 - **LLMBackend**：封装了不同供应商的 API 调用，统一输出为结构化的 `LLMResponse` 对象。
 - **TTSBackend**：通过 HTTP API 与 GPT-SoVITS 交互，动态从当前资源包读取参考音频。
-- **STTBackend**：运行在独立的线程或异步任务中，通过 `pyaudio` 采集音频并使用 `sherpa-onnx` 本地识别。
+- **STTBackend**：运行在独立的线程或异步任务中，通过 `sounddevice` 采集音频并使用 `sherpa-onnx` 本地识别。
 
 ---
 本文档部分使用大语言模型辅助生成，翻译亦由大语言模型完成，如出现任何偏差不代表作者的真实意愿。

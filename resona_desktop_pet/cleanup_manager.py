@@ -50,55 +50,59 @@ class CleanupManager:
             return
         self._is_cleaning_up = True
         logger.info("Starting cleanup...")
-        
+
+        completed = threading.Event()
         def _force_exit_watchdog():
-            import time
-            time.sleep(2)
-            logger.warning("Cleanup timeout (2s), forcing exit...")
-            os._exit(0)
-        
+            if not completed.wait(15):
+                logger.warning("Cleanup timeout (15s), forcing exit...")
+                os._exit(1)
+
         watchdog = threading.Thread(target=_force_exit_watchdog, daemon=True)
         watchdog.start()
-        
-        for callback in reversed(self._cleanup_callbacks):
-            try:
-                callback()
-            except Exception as e:
-                logger.error(f"Error during cleanup callback: {e}")
 
-        for pid in list(self._registered_pids):
-            try:
-                logger.info(f"Killing process {pid}...")
-                if sys.platform == "win32":
-                    try:
-                        subprocess.run(
-                            ["taskkill", "/F", "/T", "/PID", str(pid)],
-                            capture_output=True,
-                            creationflags=subprocess.CREATE_NO_WINDOW,
-                            timeout=3
-                        )
-                    except subprocess.TimeoutExpired:
-                        logger.warning(f"taskkill timeout for PID {pid}")
-                
-                parent = psutil.Process(pid)
-                children = parent.children(recursive=True)
-                for child in children:
-                    try:
-                        child.terminate()
-                    except psutil.NoSuchProcess:
-                        pass
-                parent.terminate()
-                _, alive = psutil.wait_procs(children + [parent], timeout=3)
-                for p in alive:
-                    try:
-                        p.kill()
-                    except psutil.NoSuchProcess:
-                        pass
-            except psutil.NoSuchProcess:
-                pass
-            except Exception as e:
-                logger.error(f"Error killing process {pid}: {e}")
-        logger.info("Cleanup complete.")
+        try:
+            for callback in reversed(self._cleanup_callbacks):
+                try:
+                    callback()
+                except Exception as e:
+                    logger.error(f"Error during cleanup callback: {e}")
+
+            for pid in list(self._registered_pids):
+                try:
+                    logger.info(f"Killing process {pid}...")
+                    if sys.platform == "win32":
+                        try:
+                            subprocess.run(
+                                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                                capture_output=True,
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                                timeout=3
+                            )
+                        except subprocess.TimeoutExpired:
+                            logger.warning(f"taskkill timeout for PID {pid}")
+
+                    parent = psutil.Process(pid)
+                    children = parent.children(recursive=True)
+                    for child in children:
+                        try:
+                            child.terminate()
+                        except psutil.NoSuchProcess:
+                            pass
+                    parent.terminate()
+                    _, alive = psutil.wait_procs(children + [parent], timeout=3)
+                    for p in alive:
+                        try:
+                            p.kill()
+                        except psutil.NoSuchProcess:
+                            pass
+                except psutil.NoSuchProcess:
+                    pass
+                except Exception as e:
+                    logger.error(f"Error killing process {pid}: {e}")
+            logger.info("Cleanup complete.")
+        finally:
+            completed.set()
+
 cleanup_manager = CleanupManager.get_instance()
 def register_cleanup(callback: Callable):
     cleanup_manager.register(callback)

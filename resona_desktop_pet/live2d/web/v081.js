@@ -14005,7 +14005,7 @@ var Live2DCubismFramework35;
   Live2DCubismFramework36.CubismUserModel = CubismUserModel;
 })(Live2DCubismFramework35 || (Live2DCubismFramework35 = {}));
 
-// thinking_wait_20260930/staged/resona_desktop_pet/live2d/web/v081/angry-eye-transition.js
+// resona_desktop_pet/live2d/web/v081/angry-eye-transition.js
 function createAngryEyeTransition({ closeSeconds = 0.1, closedSeconds = 0.1, openSeconds = 0.14, settleSeconds = 0.45 } = {}) {
   const reopen = closeSeconds + closedSeconds, openEnd = reopen + openSeconds;
   if (![closeSeconds, closedSeconds, openSeconds, settleSeconds].every((v) => Number.isFinite(v) && v > 0) || settleSeconds < openEnd) throw Error("Invalid eye handover timing");
@@ -14039,7 +14039,7 @@ function createAngryEyeTransition({ closeSeconds = 0.1, closedSeconds = 0.1, ope
   } };
 }
 
-// thinking_wait_20260930/staged/resona_desktop_pet/live2d/web/v081/emotion-controller.js
+// resona_desktop_pet/live2d/web/v081/emotion-controller.js
 function createEmotionController({ model, contract: contract2, manager, motions, onChange = () => {
 } }) {
   const entries = new Map(contract2.expressions.map((e) => [e.name, e]));
@@ -14089,7 +14089,7 @@ function createEmotionController({ model, contract: contract2, manager, motions,
   } };
 }
 
-// thinking_wait_20260930/staged/resona_desktop_pet/live2d/web/v081/thought-controller.js
+// resona_desktop_pet/live2d/web/v081/thought-controller.js
 function createThoughtController({ model, manager, motion, exitFade = 0.35 }) {
   let starts = 0, elapsed = 0, ending = false;
   return {
@@ -14114,7 +14114,7 @@ function createThoughtController({ model, manager, motion, exitFade = 0.35 }) {
   };
 }
 
-// thinking_wait_20260930/staged/resona_desktop_pet/live2d/web/v081/frame-driver.js
+// resona_desktop_pet/live2d/web/v081/frame-driver.js
 function createFrameDriver({ resetBase, updateMotion: updateMotion2, updatePhysics, stabilizePhysics, physicsStep = 1 / 120, maxCatchUp = 0.25 }) {
   if (!(physicsStep > 0 && Number.isFinite(physicsStep) && maxCatchUp >= physicsStep && Number.isFinite(maxCatchUp))) throw Error("Invalid physics timing");
   return function advance2(dt) {
@@ -14143,7 +14143,24 @@ function createFrameDriver({ resetBase, updateMotion: updateMotion2, updatePhysi
   };
 }
 
-// thinking_wait_20260930/staged/resona_desktop_pet/live2d/web/v081/singing-controller.js
+// resona_desktop_pet/live2d/web/v081/frame-limiter.js
+function createFrameLimiter(fps = 30, hiddenFps = 5) {
+  const visibleRate = Math.max(15, Math.min(60, Number(fps) || 30));
+  const hiddenRate = Math.max(1, Math.min(15, Number(hiddenFps) || 5));
+  let last2 = -Infinity;
+  return {
+    fps: visibleRate,
+    hiddenFps: hiddenRate,
+    due(now, visible) {
+      const interval = 1e3 / (visible ? visibleRate : hiddenRate);
+      if (now - last2 < interval - 0.5) return false;
+      last2 = now;
+      return true;
+    }
+  };
+}
+
+// resona_desktop_pet/live2d/web/v081/singing-controller.js
 function createSingingController({ model, manager, createMotion, contract: contract2, motionData, getId }) {
   const ids = contract2.drivenParameters;
   const get2 = (id) => model.getParameterValueById(getId(id));
@@ -14255,7 +14272,7 @@ function createSingingController({ model, manager, createMotion, contract: contr
   }, log };
 }
 
-// thinking_wait_20260930/staged/resona_desktop_pet/live2d/web/v081/main.ts
+// resona_desktop_pet/live2d/web/v081/main.ts
 var PetModel = class extends CubismUserModel {
   physics(dt, reset) {
     if (!this._physics) return;
@@ -14265,6 +14282,12 @@ var PetModel = class extends CubismUserModel {
 };
 var w = window;
 var canvas = document.querySelector("#model");
+var query = new URLSearchParams(location.search);
+var frameLimit = createFrameLimiter(Number(query.get("fps")), Number(query.get("hidden_fps")));
+var renderVisible = true;
+var renderedFrames = 0;
+var animationHandle = null;
+var timerHandle = null;
 var looks = { center: [0, 0], left: [-0.55, 0], right: [0.55, 0], up: [0, 0.4], down: [0, -0.4] };
 var user;
 var gl;
@@ -14278,6 +14301,7 @@ var contract;
 var bounds;
 var physicsOutputs = [];
 var resetPhysics = true;
+var paramById = /* @__PURE__ */ new Map();
 var ready = false;
 var baseEmotion = "neutral";
 var state = "idle";
@@ -14303,11 +14327,11 @@ var gestureWeight = 0;
 var gestureTarget = [0, 0];
 var capabilities = { expressions: [], motions: ["none", "nod", "shake", "blink"], looks: Object.keys(looks), actions: ["sing"], unsupported: ["head_pat", "cheek_poke", "hug", "shoulder_pat", "wave"] };
 var get = (id) => {
-  const p = params.find((p2) => p2.id === id);
+  const p = paramById.get(id);
   return p ? user.getModel().getParameterValueByIndex(p.index) : 0;
 };
 var set = (id, v) => {
-  const p = params.find((p2) => p2.id === id);
+  const p = paramById.get(id);
   if (p) user.getModel().setParameterValueByIndex(p.index, Math.max(p.min, Math.min(p.max, v)));
 };
 var capture = () => Object.fromEntries(params.map((p) => [p.id, get(p.id)]));
@@ -14322,6 +14346,7 @@ function report() {
     opacity,
     profile: contract?.version,
     capabilities,
+    rendering: { fps_limit: frameLimit.fps, hidden_fps: frameLimit.hiddenFps, visible: renderVisible && !document.hidden, frames: renderedFrames },
     expression: emotion?.name,
     expression_owner: replySelected ? "reply" : state === "thinking" ? "thinking" : "base",
     action: action ? { ...action, status: "running" } : lastAction,
@@ -14338,6 +14363,11 @@ function command(c) {
   try {
     if (!ready) throw Error("Renderer not ready");
     const p = c.payload || {};
+    if (c.type === "visibility") {
+      renderVisible = p.visible !== false;
+      scheduleFrame();
+      return;
+    }
     if (c.type === "status") {
       pending.push({ id: c.id, status: "observed" });
       return;
@@ -14492,8 +14522,25 @@ function fail(e) {
   document.querySelector("#error").textContent = "Live2D: " + String(e);
   bridge?.report(JSON.stringify({ ok: false, ready: false, error: String(e) }));
 }
+function scheduleFrame() {
+  if (!ready) return;
+  if (animationHandle !== null) {
+    cancelAnimationFrame(animationHandle);
+    animationHandle = null;
+  }
+  if (timerHandle !== null) {
+    clearTimeout(timerHandle);
+    timerHandle = null;
+  }
+  if (renderVisible && !document.hidden) animationHandle = requestAnimationFrame(frame);
+  else timerHandle = setTimeout(() => frame(performance.now()), 1e3 / frameLimit.hiddenFps);
+}
 function frame(now) {
   try {
+    if (!frameLimit.due(now, renderVisible && !document.hidden)) {
+      scheduleFrame();
+      return;
+    }
     advance(Math.max(0, (now - last) / 1e3));
     last = now;
     const m = user.getModel();
@@ -14515,6 +14562,7 @@ function frame(now) {
     gl.clear(gl.COLOR_BUFFER_BIT);
     renderer.setRenderState(null, [0, 0, width, height]);
     renderer.drawModel();
+    renderedFrames++;
     if (gl.getError() !== gl.NO_ERROR) throw Error("WebGL draw error");
     w.live2dSnapshot = report();
     for (const ack of pending.splice(0)) bridge?.ack(JSON.stringify({ ...ack, ...w.live2dSnapshot, ok: true }));
@@ -14522,7 +14570,7 @@ function frame(now) {
       lastReport = now;
       bridge?.report(JSON.stringify(w.live2dSnapshot));
     }
-    requestAnimationFrame(frame);
+    scheduleFrame();
   } catch (e) {
     fail(e);
   }
@@ -14543,6 +14591,7 @@ async function main() {
   user.loadModel(await buffer(resource(settings.FileReferences.Moc)), true);
   const m = user.getModel();
   for (let i = 0; i < m.getParameterCount(); i++) params.push({ index: i, id: m.getParameterId(i).getString(), default: m.getParameterDefaultValue(i), min: m.getParameterMinimumValue(i), max: m.getParameterMaximumValue(i) });
+  for (const p of params) paramById.set(p.id, p);
   m.update();
   let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
   for (let i = 0; i < m.getDrawableCount(); i++) {
@@ -14625,8 +14674,9 @@ async function main() {
   w.live2dSnapshot = report();
   bridge?.report(JSON.stringify(report()));
   last = performance.now();
-  requestAnimationFrame(frame);
+  scheduleFrame();
 }
+document.addEventListener("visibilitychange", scheduleFrame);
 canvas.addEventListener("webglcontextlost", (e) => {
   e.preventDefault();
   fail("WebGL context lost; reload required");

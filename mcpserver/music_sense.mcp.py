@@ -1,7 +1,8 @@
 """
 music_sense.mcp.py — Windows 音乐感知 MCP
 读取/控制 Windows 系统媒体会话（Spotify / 网易云 / QQ音乐 / 浏览器等均适用）
-依赖: pip install winsdk
+依赖: pip install winrt-runtime winrt-Windows.Foundation winrt-Windows.Media.Control
+     （旧环境里的 winsdk 仍可作为回退，但它只支持到 Python 3.12）
 """
 import asyncio
 from mcp.server.fastmcp import FastMCP
@@ -20,12 +21,20 @@ ROUTING_KEYWORDS = [
 _ALLOWED_ACTIONS = {"pause", "play", "toggle", "next", "previous"}
 
 
+def _media_control():
+    """winrt supports Python 3.9-3.14; winsdk is abandoned after 3.12 but kept as a fallback."""
+    try:
+        import winrt.windows.foundation  # noqa: F401  (makes WinRT async operations awaitable)
+        import winrt.windows.media.control as control
+    except ImportError:
+        import winsdk.windows.media.control as control
+    return control
+
+
 async def _get_session():
     """获取当前活跃媒体会话，失败返回 None。"""
     try:
-        from winsdk.windows.media.control import (
-            GlobalSystemMediaTransportControlsSessionManager as Manager,
-        )
+        Manager = _media_control().GlobalSystemMediaTransportControlsSessionManager
         manager = await Manager.request_async()
         return manager.get_current_session()
     except Exception:
@@ -45,9 +54,7 @@ async def get_now_playing() -> dict:
         return {"is_playing": False, "reason": "No active media session found"}
 
     try:
-        from winsdk.windows.media.control import (
-            GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
-        )
+        PlaybackStatus = _media_control().GlobalSystemMediaTransportControlsSessionPlaybackStatus
 
         media_props = await session.try_get_media_properties_async()
         playback_info = session.get_playback_info()

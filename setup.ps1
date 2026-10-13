@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 
-$PYTHON_EMBED_URL = 'https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip'
+$PYTHON_EMBED_URL = 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip'
 $PIP_GET_URL = 'https://bootstrap.pypa.io/get-pip.py'
 $SOVITS_URL = 'https://huggingface.co/datasets/JodieRuth/test123/resolve/main/GPT-SoVITS-v2pro-20250604.zip'
 $PACK_URL = 'https://huggingface.co/datasets/JodieRuth/test1/resolve/main/Resona_Default.zip'
@@ -119,14 +119,13 @@ try {
     if ($pyVerStr -match 'Python (\d+)\.(\d+)') {
         $pyMajor = [int]$Matches[1]
         $pyMinor = [int]$Matches[2]
-        if ($pyMajor -eq 3 -and $pyMinor -ge 10 -and $pyMinor -le 13) {
+        if ($pyMajor -eq 3 -and $pyMinor -ge 10 -and $pyMinor -le 14) {
             $pyVersionOk = $true
             Write-Host "[Check] Python $pyMajor.$pyMinor detected. Compatible." -ForegroundColor Green
         } else {
-            Write-Host "[Warning] Python $pyMajor.$pyMinor detected. Resona requires Python 3.10 - 3.13." -ForegroundColor Yellow
-            Write-Host "          Python 3.14+ is NOT supported due to dependency limitations." -ForegroundColor Yellow
-            Write-Host "          Recommended: install Python 3.10 from https://python.org" -ForegroundColor Yellow
-            Write-Host "          Alternatively, select Mode 3 below to use a bundled Python 3.10." -ForegroundColor Yellow
+            Write-Host "[Warning] Python $pyMajor.$pyMinor detected. Resona requires Python 3.10 - 3.14." -ForegroundColor Yellow
+            Write-Host "          Recommended: install Python 3.12 from https://python.org" -ForegroundColor Yellow
+            Write-Host "          Alternatively, select Mode 3 below to use a bundled Python 3.12." -ForegroundColor Yellow
         }
     }
 } catch {
@@ -157,7 +156,7 @@ if ($mode -eq '3') {
         Remove-Item 'python_embed.zip'
 
         Write-Host '[Resona] Configuring pip...'
-        $pthFile = Get-Item 'runtime\python310._pth'
+        $pthFile = Get-Item 'runtime\python312._pth'
         (Get-Content $pthFile) -replace '#import site', 'import site' | Set-Content $pthFile
         
         $curlPipArgs = @("-L", "-f", $PIP_GET_URL, "-o", "runtime\get-pip.py", "--retry", "5", "--connect-timeout", "30")
@@ -188,12 +187,12 @@ elseif ($mode -eq '2') {
         $venvVerStr = & python --version 2>&1
         if ($venvVerStr -match 'Python (\d+)\.(\d+)') {
             $vMajor = [int]$Matches[1]; $vMinor = [int]$Matches[2]
-            if ($vMajor -eq 3 -and $vMinor -ge 10 -and $vMinor -le 13) { $venvPyOk = $true }
+            if ($vMajor -eq 3 -and $vMinor -ge 10 -and $vMinor -le 14) { $venvPyOk = $true }
         }
     } catch {}
     if (-not $venvPyOk) {
-        Write-Host "[Error] System Python is not 3.10-3.13. Cannot create a working venv." -ForegroundColor Red
-        Write-Host "        Install Python 3.10 from https://python.org, or choose Mode 3 instead." -ForegroundColor Yellow
+        Write-Host "[Error] System Python is not 3.10-3.14. Cannot create a working venv." -ForegroundColor Red
+        Write-Host "        Install Python 3.12 from https://python.org, or choose Mode 3 instead." -ForegroundColor Yellow
         pause; exit 1
     }
     Write-Host '[Resona] Creating virtual environment (venv)...'
@@ -212,14 +211,14 @@ else {
 # --- 3. Requirements ---
 if (-not $skipInstall) {
     Write-Host '[Resona] Pre-installing numpy (binary only, avoids compilation errors)...'
-    $numpyArgs = @("install", "numpy>=1.26.0,<2.0.0", "--only-binary", ":all:", "--no-warn-script-location")
+    $numpyArgs = @("install", "numpy>=1.26.0", "--only-binary", ":all:", "--no-warn-script-location")
     if ($useMirror -eq 'Y' -or $useMirror -eq 'y') {
         $numpyArgs += @("-i", "https://pypi.tuna.tsinghua.edu.cn/simple")
     }
     & $PYTHON_EXEC -m pip @numpyArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[Warning] numpy pre-install failed for this Python version." -ForegroundColor Yellow
-        Write-Host "          Ensure you are using Python 3.10 - 3.13, or switch to Mode 3." -ForegroundColor Yellow
+        Write-Host "          Ensure you are using Python 3.10 - 3.14, or switch to Mode 3." -ForegroundColor Yellow
     }
 
     Write-Host '[Resona] Installing dependencies from requirements.txt...'

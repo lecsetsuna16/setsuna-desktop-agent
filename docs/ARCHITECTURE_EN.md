@@ -41,7 +41,7 @@ D:\GitHub\Resona-Desktop-Pet\
 ## 4. Decoupled Backend Services
 - **LLMBackend**: Wraps API calls from different providers into a unified `LLMResponse` object.
 - **TTSBackend**: Communicates with GPT-SoVITS via HTTP API, dynamically fetching reference audio from the active pack.
-- **STTBackend**: Runs in a separate thread/async task, capturing audio via `pyaudio` and performing local recognition using `sherpa-onnx`.
+- **STTBackend**: Runs in a separate thread/async task, capturing audio via `sounddevice` and performing local recognition using `sherpa-onnx`.
 
 ---
 Parts of this document were generated with the assistance of large language models, and translations were also completed by large language models. Any deviations do not represent the author's true intent.

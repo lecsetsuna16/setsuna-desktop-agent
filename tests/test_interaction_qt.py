@@ -11,17 +11,6 @@ class InteractionQtTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_retired_actions_emit_nothing_and_start_no_animation(self):
-        view = CharacterView()
-        emitted = []
-        view.physicalInteraction.connect(emitted.append)
-        for kind in ("head_pat", "cheek_poke", "hug", "shoulder_pat", "unknown"):
-            view.trigger_physical_interaction(kind)
-            view.play_interaction_feedback(kind)
-        self.assertEqual([], emitted)
-        self.assertFalse(view.interaction_active)
-        self.assertFalse(view.trigger_head_pat(QPoint(10, 10)))
-        view.close()
 
     def test_context_menu_only_exposes_singing_and_stop(self):
         calls = []

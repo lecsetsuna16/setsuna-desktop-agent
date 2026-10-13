@@ -127,7 +127,7 @@ class LLMBackend:
 
         # ── Skill 系统初始化 ──────────────────────────────────────────────────
         if config.skills_enabled:
-            loaded = skill_manager.load_all()
+            skill_manager.load_all()
             # TODO: 校验 skill 依赖的 MCP tools 是否已加载
 
     def set_on_activity_callback(self, callback: Callable[[], None]):
@@ -212,39 +212,6 @@ class LLMBackend:
             "Only return the final JSON once the task is complete or you require user input."
         )
 
-    def _get_subagent_system_prompt(self) -> str:
-        return (
-            "You are a sub-agent. Execute the requested task using tools. "
-            "Use tools until the task is complete, then return a concise report."
-        )
-
-    def _prune_subagent_history(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if len(messages) <= 3:
-            return messages
-
-        new_messages = [messages[0]]
-
-        first_user_msg = messages[1].copy()
-        content = first_user_msg["content"]
-        for block in ["[INITIAL_STATE]", "[YOUR PREVIOUS THOUGHTS]", "[RECENT THOUGHTS]", "[MANDATORY INSTRUCTION]"]:
-            if block in content:
-                content = content.split(block)[0].strip()
-        first_user_msg["content"] = content + "\n\n(Initial state omitted. See latest tool result for current battlefield.)"
-        new_messages.append(first_user_msg)
-
-        last_assistant_idx = -1
-        for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "assistant":
-                last_assistant_idx = i
-                break
-
-        if last_assistant_idx != -1 and last_assistant_idx > 1:
-            new_messages.extend(messages[last_assistant_idx:])
-        elif len(messages) > 2:
-            new_messages.append(messages[-1])
-
-        log(f"[SubAgent] Aggressive pruning: {len(messages)} -> {len(new_messages)} messages.")
-        return new_messages
 
     async def _run_subagent(
         self,
@@ -335,7 +302,7 @@ class LLMBackend:
             target_pack_id = pack_id if pack_id else self.config.pack_manager.active_pack_id
             pack_root = self.config.pack_manager.packs_dir / target_pack_id
             from ..live2d.protocol import live2d_prompt_path
-            live_prompt = live2d_prompt_path(self.config, pack_id) if source in ("desktop", "physical_interaction", "idle_trigger") else None
+            live_prompt = live2d_prompt_path(self.config, pack_id) if source in ("desktop", "idle_trigger") else None
             soul_path = live_prompt or (pack_root / "prompts" / "SOUL.txt")
             base_prompt = soul_path.read_text(encoding="utf-8") if soul_path.exists() else self.config.get_prompt(pack_id=pack_id)
         except Exception:
@@ -500,7 +467,7 @@ class LLMBackend:
         # Physical UI events already carry a strict structured-output instruction.
         # Appending the inner-OS marker here makes Flash models put roleplay thoughts
         # outside the JSON envelope, so keep it for ordinary conversation only.
-        if _is_first_message and _is_deepseek and source != "physical_interaction":
+        if _is_first_message and _is_deepseek:
             processed_question = processed_question + _DEEPSEEK_INNER_OS_MARKER
 
         messages.append({"role": "user", "content": processed_question})
@@ -757,9 +724,9 @@ class LLMBackend:
         return response
 
     def _log_interaction(self, request_data: Any, response_raw: str):
-        import logging
+        from io import StringIO
+        from ..logging_utils import write_diagnostic
         import copy
-        llm_logger = logging.getLogger("LLM")
 
         if not self.log_path: return
 
@@ -784,7 +751,7 @@ class LLMBackend:
         try:
             safe_data = mask_base64(request_data)
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.log_path, "a", encoding="utf-8") as f:
+            with StringIO() as f:
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 f.write(f"\n={'='*20} {ts} {'='*20}\n")
                 if isinstance(safe_data, str):
@@ -802,6 +769,7 @@ class LLMBackend:
                         f.write(f"[REQUEST]\n{json.dumps(safe_data, ensure_ascii=False, indent=2)}\n")
 
                 f.write(f"[RESPONSE RAW]\n{response_raw}\n")
+                write_diagnostic(self.log_path, f.getvalue())
 
         except Exception as e:
             print(f"[LLM] Logging error: {e}")
@@ -1580,7 +1548,6 @@ class LLMBackend:
 
         try:
             messages = self._build_messages(question, extra_context=None, history=None, pack_id=pack_id, source="idle_trigger")
-            processed_question = self._extract_text_content(messages[-1]["content"])
 
             supported_types = {"local", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
             if model_type in supported_types:

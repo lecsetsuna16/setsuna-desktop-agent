@@ -176,12 +176,47 @@ class STTBackend:
         self._record_thread = threading.Thread(target=self._record_audio, args=(on_complete,), daemon=True)
         self._record_thread.start()
 
-    def _record_audio(self, on_complete: Optional[Callable[[STTResult], None]]) -> None:
+    def _open_microphone(self):
+        """Return (read_block, close) for 16-bit mono capture in 1024-frame blocks.
+
+        sounddevice ships wheels for every supported Python; PyAudio stops at 3.13
+        and is only used when an older environment lacks sounddevice.
+        """
         try:
+            import sounddevice as sd
+        except ImportError:
             import pyaudio
-            import numpy as np
             p = pyaudio.PyAudio()
-            stream = p.open(format=pyaudio.paInt16, channels=1, rate=self._sample_rate, input=True, frames_per_buffer=1024)
+            try:
+                stream = p.open(format=pyaudio.paInt16, channels=1, rate=self._sample_rate, input=True, frames_per_buffer=1024)
+            except Exception:
+                p.terminate()
+                raise
+
+            def close():
+                stream.stop_stream()
+                stream.close()
+                p.terminate()
+            return (lambda: stream.read(1024, exception_on_overflow=False)), close
+
+        stream = sd.RawInputStream(samplerate=self._sample_rate, channels=1, dtype="int16", blocksize=1024)
+        try:
+            stream.start()
+        except Exception:
+            # The caller only receives close() after a successful start.
+            stream.close()
+            raise
+
+        def close():
+            stream.stop()
+            stream.close()
+        return (lambda: bytes(stream.read(1024)[0])), close
+
+    def _record_audio(self, on_complete: Optional[Callable[[STTResult], None]]) -> None:
+        close_microphone = None
+        try:
+            import numpy as np
+            read_block, close_microphone = self._open_microphone()
             max_duration = self.config.stt_max_duration
             silence_timeout = self.config.stt_silence_threshold
             max_frames = int(max_duration * self._sample_rate / 1024)
@@ -191,7 +226,7 @@ class STTBackend:
             VOL_THRESHOLD = 20
             MIN_DURATION = 2.0
             while self._is_recording and frames_recorded < max_frames:
-                data = stream.read(1024, exception_on_overflow=False)
+                data = read_block()
                 self._audio_data.append(data)
                 frames_recorded += 1
                 volume = np.abs(np.frombuffer(data, dtype=np.int16)).mean()
@@ -203,10 +238,9 @@ class STTBackend:
                             break
                 else:
                     silence_frames = 0
-            
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
+
+            close_microphone()
+            close_microphone = None
             self._is_recording = False
             log("Recording finished. Recognizing...")
             result = self._recognize_audio()
@@ -215,28 +249,21 @@ class STTBackend:
             self._is_recording = False
             log(f"Recording error: {e}")
             if on_complete: on_complete(STTResult(error=str(e)))
+        finally:
+            if close_microphone is not None:
+                try:
+                    close_microphone()
+                except Exception:
+                    pass
 
     def recognize_file(self, file_path: str) -> STTResult:
         import numpy as np
         import wave
         log(f"recognize_file start path={file_path}")
         
-        if not self._model_loaded:
-             try:
-                 loop = asyncio.get_event_loop()
-                 if loop.is_running():
-                     new_loop = asyncio.new_event_loop()
-                     try:
-                         if not new_loop.run_until_complete(self.load_model()):
-                             return STTResult(error="Model load failed")
-                     finally:
-                         new_loop.close()
-                 else:
-                     if not loop.run_until_complete(self.load_model()):
-                         return STTResult(error="Model load failed")
-             except Exception:
-                 if not asyncio.run(self.load_model()):
-                     return STTResult(error="Model load failed")
+        # Called through asyncio.to_thread, so this worker thread owns no event loop.
+        if not self._model_loaded and not asyncio.run(self.load_model()):
+            return STTResult(error="Model load failed")
 
         try:
             if not os.path.exists(file_path):

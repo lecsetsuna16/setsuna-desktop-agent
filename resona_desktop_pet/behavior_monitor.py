@@ -4,6 +4,8 @@ import random
 import ctypes
 import psutil
 import logging
+from collections import deque
+from threading import Lock
 import ctypes.wintypes
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -36,12 +38,21 @@ class BehaviorMonitor(QThread):
         self.last_music_title = ""
         self._last_mock_data = {}
         self.plugin_status_cache = {}
-        self.dropped_file_cache = None  
+        self.active_processes = set()
+        self._process_sample_at = float("-inf")
+        self._hardware_sample_at = float("-inf")
+        self._hardware_cache = {}
+        self._nvml = None
+        self._gpu_handle = None
+        self.dropped_file_cache = None
+        self._dropped_files = deque()
+        self._drop_lock = Lock()
         self.load_triggers()
 
     def on_file_dropped(self, file_info: dict):
         """处理UI层发出的文件拖入信号"""
-        self.dropped_file_cache = file_info
+        with self._drop_lock:
+            self._dropped_files.append(dict(file_info))
         logging.info(f"[Behavior] 文件拖入: name={file_info.get('name')}, ext={file_info.get('ext')}")
 
     def _poll_plugins(self):
@@ -88,14 +99,23 @@ class BehaviorMonitor(QThread):
     def stop(self):
         self.running = False
     def run(self):
-        while self.running:
-            try:
-                if self.config.behavior_enabled:
-                    self._perform_checks(is_startup=self.is_first_run)
-                    self.is_first_run = False
-            except Exception as e:
-                logging.error(f"[Behavior] Loop error: {e}")
-            time.sleep(self.config.behavior_interval)
+        try:
+            while self.running:
+                try:
+                    if self.config.behavior_enabled:
+                        self._perform_checks(is_startup=self.is_first_run)
+                        self.is_first_run = False
+                except Exception as e:
+                    logging.error(f"[Behavior] Loop error: {e}")
+                time.sleep(self.config.behavior_interval)
+        finally:
+            if self._nvml is not None:
+                try:
+                    self._nvml.nvmlShutdown()
+                except Exception:
+                    pass
+                self._nvml = self._gpu_handle = None
+
     def _perform_checks(self, is_startup=False):
         now = time.time()
         self._poll_plugins()
@@ -157,15 +177,7 @@ class BehaviorMonitor(QThread):
                     logging.error(f"[Behavior] Mock 数据读取失败: {e}")
 
         try:
-            current_pids = {}
-            for p in psutil.process_iter(['name', 'pid', 'create_time']):
-                try:
-                    pid = p.info['pid']; pn = p.info['name'].lower()
-                    current_pids[pid] = pn
-                    if pid not in self.pid_history:
-                        self.pid_history[pid] = {"name": pn, "start_time": p.info['create_time']}
-                except: continue
-            self.active_processes = set(current_pids.values())
+            self._update_processes()
             hwnd = ctypes.windll.user32.GetForegroundWindow()
             win_info = self._get_window_info(hwnd)
             idle_time = self._get_idle_time()
@@ -188,6 +200,21 @@ class BehaviorMonitor(QThread):
         except Exception as e:
             logging.error(f"[Behavior] Check failed: {e}")
     def _process_rule_matching(self, now, win, idle, hw, clip, weather, is_startup, m_date=None, m_time=None, clip_changed="", music_title="", music_changed="", mock_uptime=None, mock_battery=None, mock_file_drop=None):
+        with self._drop_lock:
+            pending = list(self._dropped_files)
+            self._dropped_files.clear()
+        if self.controller.singing_triggers_suppressed:
+            return
+        try:
+            for file_info in pending or [None]:
+                self.dropped_file_cache = file_info
+                self._evaluate_rules(now, win, idle, hw, clip, weather, is_startup,
+                                     m_date, m_time, clip_changed, music_title, music_changed,
+                                     mock_uptime, mock_battery, mock_file_drop)
+        finally:
+            self.dropped_file_cache = None
+
+    def _evaluate_rules(self, now, win, idle, hw, clip, weather, is_startup, m_date=None, m_time=None, clip_changed="", music_title="", music_changed="", mock_uptime=None, mock_battery=None, mock_file_drop=None):
         # Keep sensor/fullscreen updates running, but do not consume trigger counts.
         if self.controller.singing_triggers_suppressed:
             self.dropped_file_cache = None
@@ -223,7 +250,7 @@ class BehaviorMonitor(QThread):
         for i, c in enumerate(conds):
             c_path = f"{path}_{i}"
             if "logic" in c:
-                res = self._check_recursive_logic(c, win, idle, recovery, hw, ui, clip, weather, rid, m_date, m_time, clip_changed, music_title, music_changed, mock_uptime=mock_uptime, mock_battery=mock_battery, mock_file_drop=mock_file_drop, c_path=c_path)
+                res = self._check_recursive_logic(c, win, idle, recovery, hw, ui, clip, weather, rid, m_date, m_time, clip_changed, music_title, music_changed, mock_uptime=mock_uptime, mock_battery=mock_battery, mock_file_drop=mock_file_drop, path=c_path)
             else:
                 res, _ = self._test_single_condition_v6(c, win, idle, recovery, hw, ui, clip, weather, m_date, m_time, clip_changed, music_title, music_changed, mock_uptime=mock_uptime, mock_battery=mock_battery, mock_file_drop=mock_file_drop)
             if logic == "CUMULATIVE":
@@ -479,7 +506,25 @@ class BehaviorMonitor(QThread):
                 except: pass
             return WindowInfo(hwnd, pid.value, buff.value, pname, (rect.left, rect.top, rect.right, rect.bottom), url)
         except: return None
+    def _update_processes(self):
+        now = time.monotonic()
+        if now - self._process_sample_at < self.config.process_poll_interval:
+            return
+        current = {}
+        for process in psutil.process_iter(['name', 'pid', 'create_time']):
+            try:
+                info = process.info
+                current[info['pid']] = {'name': info['name'].lower(), 'start_time': info['create_time']}
+            except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
+                continue
+        self.pid_history = current
+        self.active_processes = {entry['name'] for entry in current.values()}
+        self._process_sample_at = now
+
     def _get_hardware_stats(self):
+        now = time.monotonic()
+        if now - self._hardware_sample_at < self.config.hardware_poll_interval:
+            return dict(self._hardware_cache)
         stats = {"cpu_temp": 0.0, "gpu_temp": 0.0, "cpu_usage": 0.0, "gpu_usage": 0.0}
         try:
             stats["cpu_usage"] = psutil.cpu_percent()
@@ -489,15 +534,18 @@ class BehaviorMonitor(QThread):
         except: pass
 
         if not getattr(self.controller, "can_monitor_gpu", True):
-            return stats
+            self._hardware_cache, self._hardware_sample_at = stats, now
+            return dict(stats)
 
         try:
             import pynvml
-            pynvml.nvmlInit()
-            h = pynvml.nvmlDeviceGetHandleByIndex(0)
+            if self._nvml is None:
+                pynvml.nvmlInit()
+                self._nvml = pynvml
+                self._gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            h = self._gpu_handle
             stats["gpu_temp"] = pynvml.nvmlDeviceGetTemperature(h, 0)
             stats["gpu_usage"] = pynvml.nvmlDeviceGetUtilizationRates(h).gpu
-            pynvml.nvmlShutdown()
         except:
             try:
                 import GPUtil
@@ -506,7 +554,8 @@ class BehaviorMonitor(QThread):
                     stats["gpu_temp"] = gpus[0].temperature
                     stats["gpu_usage"] = gpus[0].load * 100
             except: pass
-        return stats
+        self._hardware_cache, self._hardware_sample_at = stats, now
+        return dict(stats)
     def _get_clipboard(self):
         if not self.config.monitor_clipboard: return ""
         try:

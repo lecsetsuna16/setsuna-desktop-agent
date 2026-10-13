@@ -260,3 +260,4 @@ android-client/*.keystore
 packs/*/assets/live2d/
 packs/*/prompts/character_prompt_live2d_*.txt
 瘦身与调试方案_给Astra.txt
+瘦身实施记录_*.txt

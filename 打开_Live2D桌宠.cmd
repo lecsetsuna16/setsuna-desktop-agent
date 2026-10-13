@@ -1,3 +1,9 @@
 @echo off
 cd /d "%~dp0"
-start "" "runtime_live2d\pythonw.exe" "run_live2d.py"
+call "tools\find_pythonw.cmd"
+if not defined PYW (
+    echo [Setsuna] No usable Python environment found. Run setup.ps1 first.
+    pause
+    exit /b 1
+)
+start "" "%PYW%" "run_live2d.py"

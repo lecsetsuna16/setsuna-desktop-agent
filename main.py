@@ -14,7 +14,7 @@ import random
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Optional
-from PySide6.QtCore import QObject, Signal, QTimer, Qt
+from PySide6.QtCore import QObject, Signal, QTimer, Qt, QMetaObject
 from PySide6.QtWidgets import QApplication, QMessageBox
 QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
 from resona_desktop_pet.live2d.canvas import Live2DCanvas
@@ -26,6 +26,7 @@ from resona_desktop_pet.ui.luna.main_window import MainWindow
 from resona_desktop_pet.ui.tray_icon import TrayIcon
 from resona_desktop_pet.cleanup_manager import cleanup_manager
 from resona_desktop_pet.behavior_monitor import BehaviorMonitor
+from resona_desktop_pet.logging_utils import write_diagnostic, prune_session_logs
 from resona_desktop_pet.web_server import WebServerThread, session_manager, ClientSession
 log_dir = project_root / "logs"
 log_dir.mkdir(exist_ok=True)
@@ -34,41 +35,25 @@ log_file = log_dir / f"app_{timestamp}.log"
 sovits_log_file = log_dir / f"sovits_{timestamp}.log"
 llm_log_file = log_dir / f"llm_{timestamp}.log"
 import logging
-def setup_dedicated_logger(name, file_path, level=logging.INFO):
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    if not logger.handlers:
-        handler = logging.FileHandler(file_path, encoding="utf-8")
-        handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-        logger.addHandler(handler)
-    logger.propagate = False
-    return logger
 
-def get_sovits_logger():
-    return setup_dedicated_logger("SoVITS", sovits_log_file)
-
-def get_llm_logger():
-    return setup_dedicated_logger("LLM", llm_log_file)
 
 def exception_hook(exctype, value, tb):
     traceback.print_exception(exctype, value, tb)
     logging.error("Uncaught exception:", exc_info=(exctype, value, tb))
 
 sys.excepthook = exception_hook
-# sovits_logger = setup_dedicated_logger("SoVITS", sovits_log_file)
-# llm_logger = setup_dedicated_logger("LLM", llm_log_file)
 class TeeLogger:
     def __init__(self, filename, terminal):
         self.terminal = terminal
-        self.log_file = open(filename, "a", encoding="utf-8", buffering=1)
+        self.filename = filename
     def write(self, message):
         if self.terminal is not None:
             self.terminal.write(message)
-        return self.log_file.write(message)
+        write_diagnostic(self.filename, message)
+        return len(message)
     def flush(self):
         if self.terminal is not None:
             self.terminal.flush()
-        self.log_file.flush()
     def isatty(self):
         return getattr(self.terminal, 'isatty', lambda: False)()
 def log(message):
@@ -492,8 +477,6 @@ class ApplicationController(QObject):
         self._trigger_cooldown_end = 0
         self._post_busy_cooldown_end = 0
         self._last_busy_state = False
-        self._physical_interaction_last_at = {}
-        self._pending_physical_interaction = None
         self._pending_triggers = []
         self._is_chain_executing = False
         self._chain_cancelled = False
@@ -505,6 +488,8 @@ class ApplicationController(QObject):
         self.current_weather = {}
         self.interaction_locked = False
         self._cleanup_started = False
+        self._cleanup_finished = threading.Event()
+        self.sovits_manager = None
         self._settings_dialog = None
         self.state = self._load_state()
         if self.config.sovits_enabled:
@@ -535,6 +520,7 @@ class ApplicationController(QObject):
             try:
                 future.result(timeout=self.config.mcp_startup_timeout + 5)
             except Exception as e:
+                future.cancel()
                 log(f"[Main] MCP startup failed: {e}")
             self.mcp_manager._clean_orphan_auto_cache()
         self.audio_player = AudioPlayer(self)
@@ -582,7 +568,6 @@ class ApplicationController(QObject):
         log("[PackSwitch] pack_changed signal connected")
         self.pack_switch_ready.connect(self._finalize_ui_after_pack_change, Qt.QueuedConnection)
         self.main_window.request_query.connect(self._handle_user_query)
-        self.main_window.physical_interaction.connect(self._handle_physical_interaction)
         self.external_query_signal.connect(self._handle_user_query)
         self.main_window.replay_requested.connect(self._replay_last_response)
         self.main_window.settings_requested.connect(self._show_settings)
@@ -1017,26 +1002,8 @@ class ApplicationController(QObject):
         self.main_window.start_thinking()
         asyncio.run_coroutine_threadsafe(self._query_llm(text), self._loop)
 
-    def _handle_physical_interaction(self, interaction: str):
-        """Legacy touch interactions are retired; singing uses the Live2D tool."""
-        self._pending_physical_interaction = None
-
-    async def _query_llm_physical_interaction(self, prompt: str, interaction: str):
-        get_llm_logger()
-        try:
-            response = await self.llm_backend.query(
-                prompt,
-                pack_id=self.config.pack_manager.active_pack_id,
-                source="physical_interaction",
-            )
-            self.llm_response_ready.emit(response)
-        except Exception as e:
-            log(f"[Interaction] LLM reaction failed for {interaction}: {e}")
-            from resona_desktop_pet.backend.llm_backend import LLMResponse
-            self.llm_response_ready.emit(LLMResponse(error=str(e)))
 
     async def _query_llm(self, text: str):
-        get_llm_logger()
         
         try:
             response = await self.llm_backend.query(text, pack_id=self.config.pack_manager.active_pack_id, source="desktop")
@@ -1179,7 +1146,6 @@ class ApplicationController(QObject):
             self.main_window.set_speaking(False)
             self.main_window.show_behavior_response_with_timeout(text, emotion)
     async def _generate_tts(self, text: str, emotion: str, language: Optional[str] = None):
-        get_sovits_logger()
         self._mark_tts_activity()
 
         if not language and self.config.use_pack_settings:
@@ -1220,8 +1186,6 @@ class ApplicationController(QObject):
             self._sync_singing_trigger_guard()
             return
         now = time.time()
-        if self._try_start_pending_physical_interaction(now):
-            return
         if self.config.disable_actions:
             if self._pending_triggers:
                 self._pending_triggers = []
@@ -1235,9 +1199,6 @@ class ApplicationController(QObject):
             self._trigger_cooldown_end = now + self.config.trigger_cooldown
             self._execute_actions_chain(trigger)
 
-    def _try_start_pending_physical_interaction(self, now: float) -> bool:
-        self._pending_physical_interaction = None
-        return False
 
     def _check_idle_trigger(self):
         if self.singing_triggers_suppressed:
@@ -1258,7 +1219,6 @@ class ApplicationController(QObject):
         seconds_passed = int(adjusted_elapsed)
         if seconds_passed <= 0:
             return
-        expected_triggers = seconds_passed * probability
         if self._idle_trigger_count < min_triggers:
             if random.random() < probability or self._idle_trigger_count < seconds_passed * probability:
                 self._trigger_idle_question()
@@ -1279,7 +1239,6 @@ class ApplicationController(QObject):
         asyncio.run_coroutine_threadsafe(self._query_llm_idle(prompt), self._loop)
 
     async def _query_llm_idle(self, prompt: str):
-        get_llm_logger()
         try:
             response = await self.llm_backend.query_idle(prompt, pack_id=self.config.pack_manager.active_pack_id)
             self.llm_response_ready.emit(response)
@@ -1503,7 +1462,6 @@ class ApplicationController(QObject):
     def _handle_pack_change(self, pack_id: str):
         log(f"[PackSwitch] Start: requested={pack_id} current_active={self.config.pack_manager.active_pack_id} project_root={self.project_root}")
         self._cancel_action_chain()
-        self._pending_physical_interaction = None
         self.main_window.hide()
         if hasattr(self, "timer_scheduler"):
             self.timer_scheduler.reset()
@@ -1698,16 +1656,29 @@ class ApplicationController(QObject):
             log(f"[Weather] Service error: {e}")
     def _run_loop(self):
         asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
+        try:
+            self._loop.run_forever()
+        finally:
+            pending = asyncio.all_tasks(self._loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+            self._loop.close()
     def _cleanup_temp_dir(self):
-        import shutil
+        # TEMP also holds persistent timer queues and verification artifacts.
+        # Only expire audio produced by this app, leaving current playback alone.
         temp_dir = self.project_root / "TEMP"
-        if temp_dir.exists():
-            for f in temp_dir.iterdir():
+        cutoff = time.time() - 86400
+        for pattern in ("output_*.wav", "web_audio_*.wav"):
+            for path in temp_dir.glob(pattern):
                 try:
-                    if f.is_file(): f.unlink()
-                    elif f.is_dir(): shutil.rmtree(f)
-                except: pass
+                    if path.is_file() and not path.is_symlink() and path.stat().st_mtime < cutoff:
+                        path.unlink()
+                except OSError:
+                    pass
+
     def _show_settings(self):
         from resona_desktop_pet.ui.settings_dialog import SettingsDialog
         if self._settings_dialog and self._settings_dialog.isVisible():
@@ -1733,68 +1704,45 @@ class ApplicationController(QObject):
         if self.main_window:
             self.main_window.refresh_from_config()
     def force_exit(self):
-        if self._cleanup_started:
-            os._exit(0)
-        self._cleanup_started = True
-        try:
-            if self._mocker_process:
-                self._mocker_process.terminate()
-        except Exception:
-            pass
-        try:
-            if self.behavior_monitor:
-                self.behavior_monitor.stop()
-                self.behavior_monitor.wait(2000)
-                if self.behavior_monitor.isRunning():
-                    self.behavior_monitor.terminate()
-        except Exception:
-            pass
-        try:
-            if self.sovits_manager:
-                self.sovits_manager.stop()
-        except Exception:
-            pass
-        try:
-            self.stt_backend.cleanup()
-        except Exception:
-            pass
-        try:
-            cleanup_manager.cleanup()
-        except Exception:
-            pass
-        try:
-            self._loop.call_soon_threadsafe(self._loop.stop)
-        except Exception:
-            pass
-        os._exit(0)
+        self.cleanup()
+        if not self._cleanup_finished.wait(15):
+            log("[Cleanup] Controller shutdown timed out; forcing exit")
+            os._exit(1)
+        QMetaObject.invokeMethod(QApplication.instance(), "quit", Qt.ConnectionType.QueuedConnection)
+
     def cleanup(self):
         if self._cleanup_started:
             return
         self._cleanup_started = True
 
         def _cleanup_task():
-            if self._mocker_process:
-                self._mocker_process.terminate()
-            if self.behavior_monitor:
-                self.behavior_monitor.stop()
-                self.behavior_monitor.wait(2000)
-                if self.behavior_monitor.isRunning():
-                    self.behavior_monitor.terminate()
-            if self.sovits_manager:
-                self.sovits_manager.stop()
             try:
+                if self._mocker_process:
+                    self._mocker_process.terminate()
+                if self.behavior_monitor:
+                    self.behavior_monitor.stop()
+                    self.behavior_monitor.wait(2000)
+                    if self.behavior_monitor.isRunning():
+                        self.behavior_monitor.terminate()
                 if self.llm_backend:
                     self.llm_backend.save_last_session()
             except Exception:
-                pass
-            self.stt_backend.cleanup()
-            cleanup_manager.cleanup()
-            try:
-                self._loop.call_soon_threadsafe(self._loop.stop)
-            except Exception:
-                pass
+                logging.exception("Controller cleanup failed")
+            finally:
+                # Registered services clean up independently; one failure must
+                # not prevent closing MCP transports or the background loop.
+                try:
+                    cleanup_manager.cleanup()
+                finally:
+                    if self._loop.is_running():
+                        self._loop.call_soon_threadsafe(self._loop.stop)
+                    self._loop_thread.join(timeout=5)
+                    if self._loop_thread.is_alive():
+                        logging.error("Background loop did not finish shutting down")
+                    else:
+                        self._cleanup_finished.set()
 
-        threading.Thread(target=_cleanup_task, daemon=True).start()
+        threading.Thread(target=_cleanup_task, daemon=True, name="Desktop cleanup").start()
     @property
     def state_path(self) -> Path:
         pack_dir = self.config.pack_manager.packs_dir / self.config.pack_manager.active_pack_id
@@ -1855,6 +1803,7 @@ def main():
         sovits_log_file = log_dir / f"sovits_{ts_part}.log"
         llm_log_file = log_dir / f"llm_{ts_part}.log"
         
+    prune_session_logs(log_dir)
     if not isinstance(sys.stdout, TeeLogger):
         sys.stdout = TeeLogger(log_file, sys.stdout)
         sys.stderr = sys.stdout
@@ -1883,6 +1832,10 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     controller = ApplicationController(sovits_log_path=sovits_log_file)
     app.aboutToQuit.connect(controller.cleanup)
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    controller.cleanup()
+    if not controller._cleanup_finished.wait(15):
+        os._exit(1)
+    sys.exit(exit_code)
 if __name__ == "__main__":
     main()

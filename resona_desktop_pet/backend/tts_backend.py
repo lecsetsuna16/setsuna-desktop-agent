@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, Callable
 from dataclasses import dataclass
 from ..config import ConfigManager
+from ..logging_utils import write_diagnostic
 @dataclass
 class TTSResult:
     audio_path: Optional[str] = None
@@ -93,7 +94,7 @@ Models: {models_info}
 Parameters: {json.dumps(payload, ensure_ascii=False, indent=2)}
 """
         try:
-            with open(log_file_path, "a", encoding="utf-8") as f: f.write(log_entry)
+            write_diagnostic(log_file_path, log_entry)
         except: pass
     async def load_model(self) -> bool:
         if not self.config.sovits_enabled: return False

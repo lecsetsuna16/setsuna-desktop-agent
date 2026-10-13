@@ -1,22 +1,17 @@
 import json
+import logging
 import os
 import random
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
-from PySide6.QtCore import Qt, QSize, QRect, Signal, QPoint, QTimer, QElapsedTimer, Property
+from PySide6.QtCore import Qt, QSize, QRect, Signal, QPoint, QTimer, Property
 from PySide6.QtGui import QPainter, QPaintEvent, QMouseEvent, QPixmap, QRegion
 from PySide6.QtWidgets import QWidget, QGraphicsOpacityEffect
-from resona_desktop_pet.interaction_effects import (
-    INTERACTION_DURATIONS_MS,
-    sample_interaction,
-)
-
 class CharacterView(QWidget):
     live2dRequested = Signal(object)
     leftClicked = Signal()
     rightClicked = Signal()
-    physicalInteraction = Signal(str)
     
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
@@ -31,28 +26,13 @@ class CharacterView(QWidget):
         self._sprite_opacity = None
         self.live2dRequested.connect(self._dispatch_live2d)
         self._pixmap: QPixmap = QPixmap()
-        self._interaction_pixmap: QPixmap = QPixmap()
-        self._interaction_opaque_bounds: QRect = QRect()
         self._scale: float = 1.0
         self.project_root: Optional[Path] = None
         self.current_outfit = "risona_outfit_00"
         self.current_emotion = "<E:smile>"
         self.emotion_map: Dict[str, List[str]] = {}
         self._opaque_bounds: QRect = QRect()
-        self._interaction_kind = ""
-        self._interaction_offset_x = 0
-        self._interaction_offset_y = 0
-        self._interaction_scale = 1.0
-        self._interaction_scale_x = 1.0
-        self._interaction_scale_y = 1.0
-        self._interaction_rotation = 0.0
-        self._interaction_progress = 0.0
-        self._interaction_duration_ms = 0
-        self._interaction_elapsed = QElapsedTimer()
-        self._interaction_feedback_timer = QTimer(self)
-        self._interaction_feedback_timer.setInterval(16)
-        self._interaction_feedback_timer.timeout.connect(self._advance_interaction_feedback)
-        
+
     def setup(self, project_root: Path, default_outfit: str = "risona_outfit_00"):
         self.project_root = project_root
         self.emotion_map = {}
@@ -218,12 +198,8 @@ class CharacterView(QWidget):
         """Map visible source bounds into an arbitrary destination image rect."""
         if self._live2d is not None:
             return target.adjusted(int(target.width() * .08), int(target.height() * .03), -int(target.width() * .08), -int(target.height() * .03))
-        pixmap = self._active_render_pixmap()
-        source = (
-            self._interaction_opaque_bounds
-            if not self._interaction_pixmap.isNull()
-            else self._opaque_bounds
-        )
+        pixmap = self._pixmap
+        source = self._opaque_bounds
         if pixmap.isNull() or source.isEmpty():
             return target
         scale_x = target.width() / max(1, pixmap.width())
@@ -249,148 +225,15 @@ class CharacterView(QWidget):
     def is_head_point(self, point: QPoint) -> bool:
         return self.head_interaction_rect().contains(point)
 
-    def trigger_head_pat(self, point: QPoint) -> bool:
-        return False
-
-    def play_head_pat_feedback(self):
-        """Backward-compatible entry point for the original head-pat effect."""
-        self.play_interaction_feedback("head_pat")
-
-    def trigger_physical_interaction(self, interaction: str):
-        """Legacy touch actions are retired; retained for callers during reload."""
-        return
-
-    def play_interaction_feedback(self, interaction: str):
-        """Ignore queued legacy touch animations."""
-        return
-
-    def _apply_interaction_frame(self, frame):
-        self._interaction_offset_x = frame.offset_x
-        self._interaction_offset_y = frame.offset_y
-        self._interaction_scale = frame.scale
-        self._interaction_scale_x = frame.scale_x
-        self._interaction_scale_y = frame.scale_y
-        self._interaction_rotation = frame.rotation
-
-    @property
-    def interaction_active(self) -> bool:
-        return self._interaction_feedback_timer.isActive()
-
-    def _active_render_pixmap(self) -> QPixmap:
-        return self._interaction_pixmap if not self._interaction_pixmap.isNull() else self._pixmap
-
-    def _load_hug_interaction_sprite(self) -> bool:
-        sprite_names = {
-            "setsuna_outfit_00": "set031124",
-            "setsuna_outfit_01": "set025124",
-        }
-        sprite_name = sprite_names.get(self.current_outfit)
-        if not sprite_name:
-            return False
-        outfit_path = self._get_outfit_path(self.current_outfit)
-        for extension in (".png", ".webp", ".jpg"):
-            path = outfit_path / f"{sprite_name}{extension}"
-            if not path.exists():
-                continue
-            pixmap = QPixmap(str(path))
-            if pixmap.isNull():
-                continue
-            self._interaction_pixmap = pixmap
-            mask = pixmap.mask()
-            self._interaction_opaque_bounds = (
-                QRegion(mask).boundingRect() if not mask.isNull() else pixmap.rect()
-            )
-            return True
-        return False
-
-    def _reset_interaction_feedback(self):
-        self._interaction_kind = ""
-        self._interaction_offset_x = 0
-        self._interaction_offset_y = 0
-        self._interaction_scale = 1.0
-        self._interaction_scale_x = 1.0
-        self._interaction_scale_y = 1.0
-        self._interaction_rotation = 0.0
-        self._interaction_progress = 0.0
-        self._interaction_pixmap = QPixmap()
-        self._interaction_opaque_bounds = QRect()
-
-    def _advance_interaction_feedback(self):
-        duration = max(1, self._interaction_duration_ms)
-        progress = self._interaction_elapsed.elapsed() / duration
-        if progress >= 1.0:
-            self._interaction_feedback_timer.stop()
-            self._reset_interaction_feedback()
-        else:
-            self._interaction_progress = progress
-            self._apply_interaction_frame(sample_interaction(self._interaction_kind, progress))
-        self.update()
 
     def paintEvent(self, event: QPaintEvent):
         if self._live2d is not None:
             return
         painter = QPainter(self)
         painter.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform, True)
-        rect = self.image_rect()
-        width_scale = self._interaction_scale * self._interaction_scale_x
-        height_scale = self._interaction_scale * self._interaction_scale_y
-        width = max(1, int(rect.width() * width_scale))
-        height = max(1, int(rect.height() * height_scale))
-        if self._interaction_kind == "hug" and self._interaction_scale != 1.0:
-            # Both requested hug sprites share the same canvas-aligned face point.
-            # Keep that point visible while reframing toward a half-body close-up.
-            face_x = rect.left() + int(rect.width() * 0.50)
-            face_y = rect.top() + int(rect.height() * 0.285)
-            zoom_fraction = min(
-                1.0,
-                max(0.0, (self._interaction_scale - 1.0) / 0.58),
-            )
-            desired_x = int(round(
-                face_x + (rect.center().x() - face_x) * zoom_fraction
-            ))
-            desired_y_target = rect.top() + int(rect.height() * 0.31)
-            desired_y = int(round(
-                face_y + (desired_y_target - face_y) * zoom_fraction
-            ))
-            rect = QRect(
-                desired_x - int(round(0.50 * width)),
-                desired_y - int(round(0.285 * height)),
-                width,
-                height,
-            )
-        elif width_scale != 1.0 or height_scale != 1.0:
-            center = rect.center()
-            if self._interaction_kind == "head_pat":
-                rect = QRect(
-                    center.x() - width // 2,
-                    rect.bottom() - height + 1,
-                    width,
-                    height,
-                )
-            else:
-                rect = QRect(
-                    center.x() - width // 2,
-                    center.y() - height // 2,
-                    width,
-                    height,
-                )
-        rect.translate(
-            int(round(self._interaction_offset_x)),
-            int(round(self._interaction_offset_y)),
-        )
-        pixmap = self._active_render_pixmap()
-        if not pixmap.isNull():
-            if self._interaction_rotation:
-                center = rect.center()
-                painter.save()
-                painter.translate(center.x(), center.y())
-                painter.rotate(self._interaction_rotation)
-                painter.translate(-center.x(), -center.y())
-                painter.drawPixmap(rect, pixmap)
-                painter.restore()
-            else:
-                painter.drawPixmap(rect, pixmap)
-            
+        if not self._pixmap.isNull():
+            painter.drawPixmap(self.image_rect(), self._pixmap)
+
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton: self.leftClicked.emit()
         elif event.button() == Qt.MouseButton.RightButton: self.rightClicked.emit()
@@ -459,23 +302,54 @@ class CharacterView(QWidget):
             self._sprite_opacity = None
         config = getattr(self.parent(), "config", None)
         if config is None:
-            self.set_render_opacity(self._render_opacity)
+            self._restore_static_sprite()
             return
         pack_id, settings = live2d_settings(config)
         if not settings.get("enabled"):
-            self.set_render_opacity(self._render_opacity)
+            self._restore_static_sprite()
             return
         root = (config.pack_manager.packs_dir / pack_id).resolve()
         model = (root / settings.get("model", "")).resolve()
         if not model.is_relative_to(root) or not model.is_file():
-            raise ValueError("Live2D model is missing or outside the character pack")
+            logging.warning("Live2D model is missing or outside the pack; using static sprite")
+            self._restore_static_sprite()
+            return
         from resona_desktop_pet.live2d.canvas import Live2DCanvas
-        self._live2d = Live2DCanvas(model, self)
+        try:
+            self._live2d = Live2DCanvas(model, self, config.live2d_fps, config.live2d_hidden_fps)
+        except ValueError as exc:
+            logging.warning("Live2D unavailable; using static sprite: %s", exc)
+            self._restore_static_sprite()
+            return
+        canvas = self._live2d
+        canvas.failed.connect(lambda error: QTimer.singleShot(0, lambda: self._fallback_to_sprite(error, canvas)))
         self.set_render_opacity(self._render_opacity)
         self._live2d.setGeometry(self.rect())
         self._live2d.show()
         self.updateGeometry()
         self.update()
+
+    def _fallback_to_sprite(self, error, source):
+        if self._live2d is not source:
+            return
+        logging.warning("Live2D renderer failed; using static sprite: %s", error)
+        self._live2d.dispose()
+        self._live2d.hide()
+        self._live2d.deleteLater()
+        self._live2d = None
+        self._restore_static_sprite()
+
+    def _restore_static_sprite(self):
+        # Live2D mode never loads a QPixmap; switching off the renderer must
+        # explicitly load the selected outfit before the static paint path runs.
+        if self.project_root is not None:
+            self.set_emotion(self.current_emotion, deterministic=True)
+        self.set_render_opacity(self._render_opacity)
+        self.updateGeometry()
+        self.update()
+        parent = self.parent()
+        if parent and hasattr(parent, 'sync_window_to_sprite'):
+            parent.sync_window_to_sprite()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
